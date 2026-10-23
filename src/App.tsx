@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { playSfx, playUi, setMusicIntensity, setVolumes, startMusic, unlockAudio } from './game/audio'
+import { playSfx, setMusicIntensity, setVolumes, startMusic, unlockAudio } from './game/audio'
 import {
   ARENAS,
   H,
@@ -56,7 +56,14 @@ const ENDLESS_FROM = 10
 const bestKey = (mode: Mode) => (mode === 'endless' ? 'abc-best-endless' : 'abc-best')
 
 type PauseView = 'menu' | 'controls' | 'settings' | 'keys' | 'extras' | 'credits'
-type Settings = { music: number; effects: number; shake: boolean; calm: boolean; largeText: boolean; danger: 'red' | 'yellow' }
+type Settings = {
+  music: number
+  effects: number
+  shake: boolean
+  calm: boolean
+  largeText: boolean
+  danger: 'red' | 'yellow'
+}
 
 function loadSettings(): Settings {
   const prefersCalm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -421,19 +428,16 @@ export default function App() {
         const step = ['ArrowUp', 'KeyW'].includes(event.code) ? -1 : ['ArrowDown', 'KeyS'].includes(event.code) ? 1 : 0
         if (step) {
           event.preventDefault()
-          playUi('move')
           selectTitle(items[(at + step + items.length) % items.length])
           return
         }
         if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(event.code) && titleItemRef.current === 'players') {
           event.preventDefault()
-          playUi('toggle')
           choosePlayers(playersRef.current === 2 ? 1 : 2)
           return
         }
         if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) {
           event.preventDefault()
-          playUi('confirm')
           const item = titleItemRef.current
           if (item === 'players') choosePlayers(playersRef.current === 2 ? 1 : 2)
           else if (item === 'endless') startGame('endless')
@@ -462,7 +466,6 @@ export default function App() {
         if (pageOnly || (view !== 'menu' && (event.code === 'Escape' || event.code === 'Backspace'))) {
           if (['Escape', 'Enter', 'Space', 'Backspace'].includes(event.code)) {
             event.preventDefault()
-            playUi('back')
             menuBack()
           }
           return
@@ -471,9 +474,6 @@ export default function App() {
           event.preventDefault()
           const count = menuItemsRef.current.length
           const index = pauseIndexRef.current
-          if (['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS'].includes(event.code)) playUi('move')
-          if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(event.code) && menuItemsRef.current[index]?.adjust) playUi('toggle')
-          if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) playUi('confirm')
           if (event.code === 'ArrowUp' || event.code === 'KeyW') selectPause((index + count - 1) % count)
           if (event.code === 'ArrowDown' || event.code === 'KeyS') selectPause((index + 1) % count)
           if (event.code === 'ArrowLeft' || event.code === 'KeyA') menuItemsRef.current[index]?.adjust?.(-1)
@@ -489,12 +489,10 @@ export default function App() {
 
       if (game.phase === 'upgrade') {
         const count = game.offers.length
-        if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(event.code)) playUi('move')
         if (event.code === 'ArrowLeft' || event.code === 'KeyA') select((selectedRef.current + count - 1) % count)
         if (event.code === 'ArrowRight' || event.code === 'KeyD') select((selectedRef.current + 1) % count)
         const confirm = event.code === 'Space' || event.code === 'Enter'
         if (confirm && performance.now() - offersOpenedAtRef.current > 500) {
-          playUi('confirm')
           pick(game.offers[selectedRef.current])
         }
         return

@@ -15,5 +15,5 @@ export const CREDITS: { heading: string; lines: string[] }[] = [
     lines: ['Pixelify Sans by Stefie Justprince', 'Silkscreen by Jason Kottke', 'VT323 by Peter Hull', 'All under the SIL Open Font License'],
   },
   { heading: 'Palette', lines: ['Endesga 32 by ENDESGA'] },
-  { heading: 'Sound', lines: ['Sound effects by Kenney (kenney.nl), CC0', 'Music: an original generative organ piece'] },
+  { heading: 'Sound', lines: ['Original synthesized sound effects and generative organ music'] },
 ]

@@ -10,7 +10,8 @@
     "format": "oxfmt",
     "package": "vite build && cd dist && rm -f ../ai-cathedral.zip && zip -qr ../ai-cathedral.zip .",
     "sprites": "node scripts/generate-cathedral-sprites.mjs && node scripts/generate-characters.mjs",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

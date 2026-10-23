@@ -1,8 +1,7 @@
 import type { Sfx } from './engine'
 
-// Sound: recorded CC0 effects from Kenney (kenney.nl, in public/sfx), with a cathedral
-// reverb, and a WebAudio synth for the music (and for any effect whose file hasn't
-// loaded yet). Effects and music run on separate buses with their own volumes.
+// Tiny WebAudio synth: every sound and the music are generated, so there are no audio
+// assets to load. Effects and music run on separate buses with their own volumes.
 
 let ctx: AudioContext | null = null
 let master: GainNode | null = null
@@ -21,30 +20,13 @@ export function unlockAudio() {
     ctx = new AudioCtor()
     master = ctx.createGain()
     master.gain.value = 0.6
-    // A gentle compressor keeps layered hits from clipping.
-    const compressor = ctx.createDynamicsCompressor()
-    compressor.threshold.value = -14
-    compressor.ratio.value = 4
-    master.connect(compressor).connect(ctx.destination)
-    // The cathedral: a long, dark reverb that every effect (and a little of the music) sends to.
-    const reverb = ctx.createConvolver()
-    reverb.buffer = cathedralImpulse(ctx, 2.6)
-    const reverbReturn = ctx.createGain()
-    reverbReturn.gain.value = 0.5
-    reverb.connect(reverbReturn).connect(master)
+    master.connect(ctx.destination)
     sfxBus = ctx.createGain()
     sfxBus.gain.value = sfxVolume
     sfxBus.connect(master)
-    const sfxSend = ctx.createGain()
-    sfxSend.gain.value = 0.28
-    sfxBus.connect(sfxSend).connect(reverb)
     musicBus = ctx.createGain()
     musicBus.gain.value = 0
     musicBus.connect(master)
-    const musicSend = ctx.createGain()
-    musicSend.gain.value = 0.16
-    musicBus.connect(musicSend).connect(reverb)
-    void loadSamples(ctx)
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
     const data = noiseBuffer.getChannelData(0)
     for (let index = 0; index < data.length; index += 1) data[index] = Math.random() * 2 - 1
@@ -101,91 +83,6 @@ function noise(duration: number, volume: number, filterFrom: number, filterTo: n
   source.stop(start + duration + 0.02)
 }
 
-/** A stereo impulse of decaying, darkening noise: a big stone room. */
-function cathedralImpulse(audio: AudioContext, seconds: number) {
-  const length = Math.floor(audio.sampleRate * seconds)
-  const impulse = audio.createBuffer(2, length, audio.sampleRate)
-  for (let channel = 0; channel < 2; channel += 1) {
-    const data = impulse.getChannelData(channel)
-    let smooth = 0
-    for (let index = 0; index < length; index += 1) {
-      const t = index / length
-      // Low-pass the noise more as it decays, like stone soaking up the highs.
-      smooth += (Math.random() * 2 - 1 - smooth) * (0.6 - t * 0.5)
-      data[index] = smooth * (1 - t) ** 2.4
-    }
-  }
-  return impulse
-}
-
-// ---------- Recorded effects ----------
-
-/** Which files each effect picks from (one at random), how loud, and how much its pitch wanders. */
-const SAMPLES: Partial<Record<Sfx, { files: string[]; gain: number; pitch?: number }>> = {
-  shoot: { files: ['scratch_001', 'scratch_002', 'scratch_003', 'scratch_004', 'scratch_005'], gain: 0.28, pitch: 0.12 },
-  hit: { files: ['impactPunch_medium_000', 'impactPunch_medium_001', 'impactPunch_medium_002'], gain: 0.4, pitch: 0.15 },
-  kill: { files: ['phaserDown1', 'phaserDown2', 'phaserDown3'], gain: 0.32, pitch: 0.1 },
-  hurt: { files: ['impactPunch_heavy_000', 'impactPunch_heavy_001', 'impactPunch_heavy_002'], gain: 0.8, pitch: 0.06 },
-  jump: { files: ['cloth1', 'cloth2', 'cloth3'], gain: 0.45, pitch: 0.1 },
-  airjump: { files: ['phaseJump1', 'phaseJump2'], gain: 0.3, pitch: 0.06 },
-  land: { files: ['footstep_concrete_000', 'footstep_concrete_001', 'footstep_concrete_002'], gain: 0.5, pitch: 0.1 },
-  dash: { files: ['drawKnife1', 'drawKnife2'], gain: 0.55, pitch: 0.1 },
-  seal: { files: ['error_004', 'error_005'], gain: 0.45 },
-  volley: { files: ['laserRetro_000', 'laserRetro_002'], gain: 0.4, pitch: 0.05 },
-  mirror: { files: ['forceField_000', 'forceField_001'], gain: 0.5 },
-  glyph: { files: ['bookFlip1', 'bookFlip2', 'bookFlip3'], gain: 0.6, pitch: 0.08 },
-  trap: { files: ['question_001', 'question_002'], gain: 0.5 },
-  ward: { files: ['impactMetal_000'], gain: 0.45, pitch: 0.12 },
-  pickup: { files: ['powerUp2'], gain: 0.4, pitch: 0.04 },
-  spawn: { files: ['maximize_003'], gain: 0.22, pitch: 0.15 },
-  wave: { files: ['impactBell_heavy_000', 'impactBell_heavy_002'], gain: 0.55, pitch: 0.03 },
-  clear: { files: ['impactBell_heavy_003'], gain: 0.5 },
-  portal: { files: ['phaserUp2'], gain: 0.35, pitch: 0.08 },
-  spit: { files: ['glitch_001', 'glitch_002', 'glitch_003', 'glitch_004'], gain: 0.35, pitch: 0.1 },
-  slam: { files: ['impactMining_000', 'impactMining_001', 'impactMining_002'], gain: 0.9, pitch: 0.08 },
-  death: { files: ['lowFrequency_explosion_000'], gain: 0.8 },
-  down: { files: ['lowThreeTone'], gain: 0.5 },
-  revive: { files: ['powerUp7'], gain: 0.5 },
-}
-/** Effects that also keep a quiet synth layer under the recording, for weight. */
-const LAYERED = new Set<Sfx>(['slam', 'death', 'wave', 'charge'])
-
-const UI_SAMPLES = { move: 'select_001', confirm: 'confirmation_001', back: 'back_001', toggle: 'switch_002' } as const
-
-const buffers = new Map<string, AudioBuffer>()
-async function loadSamples(audio: AudioContext) {
-  const names = new Set([...Object.values(SAMPLES).flatMap((sample) => sample!.files), ...Object.values(UI_SAMPLES), 'lowFrequency_explosion_001'])
-  await Promise.all(
-    [...names].map(async (name) => {
-      try {
-        const response = await fetch(`sfx/${name}.mp3`)
-        buffers.set(name, await audio.decodeAudioData(await response.arrayBuffer()))
-      } catch {
-        // Missing or undecodable: that effect falls back to the synth.
-      }
-    }),
-  )
-}
-
-function playBuffer(name: string, gain: number, pitch = 0) {
-  const buffer = buffers.get(name)
-  if (!ctx || !sfxBus || !buffer) return false
-  const source = ctx.createBufferSource()
-  source.buffer = buffer
-  source.playbackRate.value = 1 + (Math.random() * 2 - 1) * pitch
-  const level = ctx.createGain()
-  level.gain.value = gain
-  source.connect(level).connect(sfxBus)
-  source.start()
-  return true
-}
-
-/** Menu sounds: moving between rows, picking, backing out, flipping a toggle. */
-export function playUi(kind: keyof typeof UI_SAMPLES) {
-  if (!ctx || sfxVolume <= 0) return
-  playBuffer(UI_SAMPLES[kind], kind === 'move' ? 0.25 : 0.4)
-}
-
 const throttle: Partial<Record<Sfx, number>> = { hit: 0.045, shoot: 0.05, spawn: 0.12, kill: 0.04, land: 0.1, spit: 0.08 }
 
 export function playSfx(name: Sfx) {
@@ -195,17 +92,6 @@ export function playSfx(name: Sfx) {
   if (gap && now - (lastPlayed.get(name) ?? -1) < gap) return
   lastPlayed.set(name, now)
 
-  const sample = SAMPLES[name]
-  if (sample) {
-    const played = playBuffer(sample.files[Math.floor(Math.random() * sample.files.length)], sample.gain, sample.pitch)
-    if (name === 'slam') playBuffer('lowFrequency_explosion_001', 0.5)
-    if (played && !LAYERED.has(name)) return
-  }
-  synth(name)
-}
-
-/** The synthesized version of each effect: a fallback, and a weight layer for the big ones. */
-function synth(name: Sfx) {
   switch (name) {
     case 'shoot':
       tone('square', 880 + Math.random() * 80, 420, 0.07, 0.05)
