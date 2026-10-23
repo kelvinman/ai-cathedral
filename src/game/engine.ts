@@ -187,7 +187,9 @@ export type Spit = Point & {
    * the Logos's own words. A 'wave' is a slam's cracked-stone shockwave that rolls along one
    * ledge or the floor.
    */
-  kind: 'shard' | 'promise' | 'word' | 'wave'
+  kind: 'shard' | 'promise' | 'word' | 'wave' | 'wrench'
+  /** Waits this long (flickering where it will fall from) before it moves: the Logos's word rain. */
+  delay?: number
   /** Words only: the letter drawn. */
   glyph?: string
   damage: number
@@ -1702,10 +1704,14 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
   }
   e.bossTimer -= dt
   if (e.bossTimer > 0 || !e.onGround) return
-  const moves = final ? ['volley', 'summon', 'slam'] : ['slam']
+  // The Arch-Deacon slams, throws its wrench, and recompiles followers; the Logos speaks,
+  // hallucinates, leaps, and rains its words down from above. Below half health the Logos
+  // stops pausing to think.
+  const moves = final ? ['volley', 'summon', 'slam', 'rain'] : ['slam', 'wrench', 'slam', 'recompile']
   const move = moves[e.bossMove % moves.length]
   e.bossMove += 1
-  e.bossTimer = final ? rand(3, 4) : rand(5.5, 7.5)
+  const enraged = final && e.hp < e.maxHp * 0.5
+  e.bossTimer = (final ? rand(3, 4) : rand(4.5, 6)) * (enraged ? 0.65 : 1)
   const from = chest(e)
   if (move === 'slam') {
     e.bossCharge = final ? 1.1 : 0.9
@@ -1730,6 +1736,47 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
     }
     burst(g, from.x, from.y, '#e43b44', 16, 260, { glow: true, size: 3 })
     g.events.push('spit')
+  } else if (move === 'wrench') {
+    // Thrown in a high arc that lands where the player is standing.
+    const airtime = 1.1
+    g.spits.push({
+      x: from.x,
+      y: from.y - 20,
+      vx: (p.x - from.x) / airtime,
+      vy: (p.y - 20 - (from.y - 20)) / airtime - (WRENCH_GRAVITY * airtime) / 2,
+      life: 3,
+      kind: 'wrench',
+      damage: Math.round(BALANCE.spit.damage * 1.5 * (1 + (g.wave - 1) * 0.03)),
+      by: ELITE_TITLE,
+    })
+    floatText(g, e.x, e.y - e.h - 34, 'CATCH.', '#f2b04a', 22)
+    g.events.push('spit')
+  } else if (move === 'recompile') {
+    if (g.enemies.length < 16) {
+      for (const side of [-1, 1]) {
+        g.marks.push({ x: Math.max(60, Math.min(W - 60, e.x + side * 120)), y: e.y, kind: 'acolyte', elite: false, timer: 0.9, maxTimer: 0.9 })
+      }
+      floatText(g, e.x, e.y - e.h - 34, 'RECOMPILING…', '#f2b04a', 22)
+    }
+  } else if (move === 'rain') {
+    // Words fall from the vault: each flickers where it will drop, then falls.
+    for (let index = 0; index < 7; index += 1) {
+      const x = Math.max(40, Math.min(W - 40, p.x + (index - 3) * 120 + rand(-30, 30)))
+      g.spits.push({
+        x,
+        y: 30,
+        vx: 0,
+        vy: 430,
+        life: 4,
+        kind: 'word',
+        glyph: randomGlyph(),
+        delay: 0.9 + index * 0.08,
+        damage: Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)),
+        by: FINAL_TITLE,
+      })
+    }
+    floatText(g, e.x, e.y - e.h - 34, 'LISTEN.', '#e43b44', 22)
+    g.events.push('charge')
   } else if (g.enemies.length < 18) {
     for (const side of [-1, 1]) {
       g.marks.push({
@@ -1996,8 +2043,15 @@ function updateBolts(g: Game, dt: number) {
   g.bolts = g.bolts.filter((bolt) => bolt.life > 0 && bolt.x > -40 && bolt.x < W + 40 && bolt.y > -40)
 }
 
+const WRENCH_GRAVITY = 1400
+
 function updateSpits(g: Game, dt: number) {
   for (const spit of g.spits) {
+    if (spit.delay !== undefined && spit.delay > 0) {
+      spit.delay -= dt
+      continue
+    }
+    if (spit.kind === 'wrench') spit.vy += WRENCH_GRAVITY * dt
     spit.x += spit.vx * dt
     spit.y += spit.vy * dt
     spit.life -= dt
@@ -2023,7 +2077,7 @@ function updateSpits(g: Game, dt: number) {
     }
     // Shards scatter into pixels, promises pop into gold sparkle, words crumble, stone settles.
     if (spit.life <= 0) {
-      const debris = { shard: '#2ce8f5', promise: '#f2d38b', word: '#e43b44', wave: '#8b9bb4' }[spit.kind]
+      const debris = { shard: '#2ce8f5', promise: '#f2d38b', word: '#e43b44', wave: '#8b9bb4', wrench: '#e4a672' }[spit.kind]
       burst(g, spit.x, spit.y, debris, 6, 140, spit.kind === 'promise' ? { glow: true, size: 2.5 } : { gravity: 900, size: 3 })
     }
   }

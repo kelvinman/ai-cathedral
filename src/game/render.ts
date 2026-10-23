@@ -1395,6 +1395,28 @@ export function render(
   }
 
   for (const [spitIndex, spit] of g.spits.entries()) {
+    if (spit.delay !== undefined && spit.delay > 0) {
+      // A word about to fall: it flickers where it hangs, with a dashed line down its path.
+      if (Math.floor(time * 10) % 2 === 0) drawGlyph(glow, spit.glyph ?? '?', spit.x, spit.y, PX * 2, '#ff3049')
+      glow.fillStyle = 'rgba(255, 48, 73, 0.35)'
+      for (let y = spit.y + 20; y < GROUND_Y; y += 24) glow.fillRect(snap(spit.x), snap(y), PX, PX * 4)
+      continue
+    }
+    if (spit.kind === 'wrench') {
+      // The Arch-Deacon's wrench, spinning end over end.
+      const spin = Math.floor(time * 12) % 4
+      halo(glow, spit.x, spit.y, 20, '228, 59, 68', 0.3)
+      dangerRing(glow, spit.x, spit.y, 13, time)
+      glow.fillStyle = '#e4a672'
+      const long = PX * 7
+      const thick = PX * 2
+      if (spin % 2) glow.fillRect(snap(spit.x - thick / 2), snap(spit.y - long / 2), thick, long)
+      else glow.fillRect(snap(spit.x - long / 2), snap(spit.y - thick / 2), long, thick)
+      glow.fillStyle = '#ead4aa'
+      const end = spin % 2 ? [0, (spin === 1 ? -1 : 1) * long / 2] : [(spin === 0 ? -1 : 1) * long / 2, 0]
+      glow.fillRect(snap(spit.x + end[0]) - PX * 2, snap(spit.y + end[1]) - PX * 2, PX * 4, PX * 4)
+      continue
+    }
     if (spit.kind === 'wave') {
       // A shockwave: the floor cracking up in a wedge of stone that rolls along it.
       for (let column = -3; column <= 3; column += 1) {
