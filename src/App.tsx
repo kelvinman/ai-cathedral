@@ -270,10 +270,27 @@ export default function App() {
   // What the player last touched, so hints and key labels can name the right buttons.
   const [device, setDevice] = useState<Device>('keys')
   const deviceRef = useRef<Device>('keys')
+  // Menus show their keyboard cursor (the gold outline) only while keys or a pad are in
+  // use; moving the mouse hides it, since hovering already highlights.
+  const [usingMouse, setUsingMouse] = useState(true)
+  const usingMouseRef = useRef(true)
   const markDevice = useCallback((next: Device) => {
+    if (usingMouseRef.current) {
+      usingMouseRef.current = false
+      setUsingMouse(false)
+    }
     if (deviceRef.current === next) return
     deviceRef.current = next
     setDevice(next)
+  }, [])
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse' || usingMouseRef.current) return
+      usingMouseRef.current = true
+      setUsingMouse(true)
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    return () => window.removeEventListener('pointermove', onPointerMove)
   }, [])
 
   // First run only: a controls card that fades once the player starts moving.
@@ -888,7 +905,7 @@ export default function App() {
 
   return (
     <main
-      className={`game ${playing ? 'is-playing' : ''} ${device === 'pad' ? 'is-pad' : ''} ${settings.largeText ? 'is-large-text' : ''} ${settings.calm ? 'is-calm' : ''}`}
+      className={`game ${playing ? 'is-playing' : ''} ${device === 'pad' ? 'is-pad' : ''} ${settings.largeText ? 'is-large-text' : ''} ${settings.calm ? 'is-calm' : ''} ${usingMouse ? 'is-mouse' : ''}`}
     >
       <div className="stage" ref={stageRef}>
         <canvas ref={canvasRef} aria-label="AI Cathedral arena" onContextMenu={(event) => event.preventDefault()} />

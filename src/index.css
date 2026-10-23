@@ -1689,6 +1689,12 @@
   }
 }
 
+/* With the mouse, menus drop the keyboard cursor: hovering highlights instead. */
+.game.is-mouse :is(.primary, .secondary, .ghost, .player-pick, .players-toggle).is-selected {
+  outline: none;
+  box-shadow: none;
+}
+
 /* On a gamepad, key labels show the pad button they stand for (A, B, the d-pad), and
    keyboard-only shortcuts (letters) are hidden: the pad moves through menus instead. */
 .game.is-pad kbd:not([data-pad]) {
