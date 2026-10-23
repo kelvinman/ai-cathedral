@@ -431,9 +431,16 @@ export default function App() {
           selectTitle(items[(at + step + items.length) % items.length])
           return
         }
-        if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(event.code) && titleItemRef.current === 'players') {
+        // ← → pick one or two players on the tiles, and move between the Ledger and Settings.
+        const sideways = ['ArrowLeft', 'KeyA'].includes(event.code) ? -1 : ['ArrowRight', 'KeyD'].includes(event.code) ? 1 : 0
+        if (sideways && titleItemRef.current === 'players') {
           event.preventDefault()
-          choosePlayers(playersRef.current === 2 ? 1 : 2)
+          choosePlayers(sideways < 0 ? 1 : 2)
+          return
+        }
+        if (sideways && (titleItemRef.current === 'ledger' || titleItemRef.current === 'settings') && items.includes('ledger')) {
+          event.preventDefault()
+          selectTitle(sideways < 0 ? 'ledger' : 'settings')
           return
         }
         if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) {

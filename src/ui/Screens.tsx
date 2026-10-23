@@ -52,15 +52,14 @@ export function TitleScreen({
           last apostate: you. Turn its own tokens against it, and outlast twenty sermons.
         </p>
         <div className="stack run-picker">
-          {/* Players first: it applies to whichever mode starts. */}
+          {/* Who's playing first: it applies to whichever mode starts. */}
           {!touch && (
             <div
-              className={`players-toggle ${selected === 'players' ? 'is-selected' : ''}`}
+              className={`player-pick ${selected === 'players' ? 'is-selected' : ''}`}
               role="radiogroup"
               aria-label="Players"
               onPointerEnter={() => onSelect('players')}
             >
-              <span className="label">Players</span>
               {[1, 2].map((count) => (
                 <button
                   key={count}
@@ -70,10 +69,13 @@ export function TitleScreen({
                   className={players === count ? 'is-on' : ''}
                   onClick={() => onPlayers(count)}
                 >
-                  {count === 1 ? '1 player' : '2 players'}
+                  <span className="apostates" aria-hidden="true">
+                    <i className="apostate" />
+                    {count === 2 && <i className="apostate is-two" />}
+                  </span>
+                  {count === 1 ? '1 player' : '2 players · co-op'}
                 </button>
               ))}
-              <kbd>C</kbd>
             </div>
           )}
           <button
@@ -85,7 +87,13 @@ export function TitleScreen({
           >
             <span>
               {ready ? 'Story' : 'Lighting candles…'}
-              {ready && <small>Refuse the Logos · twenty sermons</small>}
+              {ready && (
+                <small>
+                  Twenty sermons
+                  {best > 0 && ` · best ${best.toLocaleString()}`}
+                  {ledger.deepest > 5 && ` · reached ${ARENAS[arenaForWave(ledger.deepest)].name.toLowerCase()}`}
+                </small>
+              )}
             </span>
             <kbd data-pad="A">Enter</kbd>
           </button>
@@ -99,42 +107,35 @@ export function TitleScreen({
             >
               <span>
                 Endless
-                <small>The 101st cycle · no end</small>
+                <small>{deepestEndless > 0 ? `The 101st cycle · deepest sermon ${deepestEndless}` : 'The 101st cycle · no end'}</small>
               </span>
               <kbd>E</kbd>
             </button>
           ) : (
             <span className="locked-mode">Endless opens once a run reaches Sermon {endlessFrom}</span>
           )}
-          {ledger.runs > 0 && (
+          <div className="title-extras">
+            {ledger.runs > 0 && (
+              <button
+                type="button"
+                className={`secondary ${selected === 'ledger' ? 'is-selected' : ''}`}
+                onClick={onLedger}
+                onPointerEnter={() => onSelect('ledger')}
+              >
+                The Ledger {ledger.unlocked.length}/{LEDGER.length}
+                {ledger.fresh.length > 0 && <span className="new-mark">New</span>}
+              </button>
+            )}
             <button
               type="button"
-              className={`ghost ${selected === 'ledger' ? 'is-selected' : ''}`}
-              onClick={onLedger}
-              onPointerEnter={() => onSelect('ledger')}
+              className={`secondary ${selected === 'settings' ? 'is-selected' : ''}`}
+              onClick={onSettings}
+              onPointerEnter={() => onSelect('settings')}
             >
-              The Ledger · {ledger.unlocked.length}/{LEDGER.length}
-              {ledger.fresh.length > 0 && <span className="new-mark">New</span>}
-              <kbd>L</kbd>
+              Settings
             </button>
-          )}
-          <button
-            type="button"
-            className={`ghost ${selected === 'settings' ? 'is-selected' : ''}`}
-            onClick={onSettings}
-            onPointerEnter={() => onSelect('settings')}
-          >
-            Settings
-          </button>
+          </div>
         </div>
-        {(best > 0 || ledger.deepest > 5) && (
-          <span className="label subtle">
-            {ledger.deepest > 5 && `Deepest · ${ARENAS[arenaForWave(ledger.deepest)].name}`}
-            {ledger.deepest > 5 && best > 0 && ' · '}
-            {best > 0 && `Best free will · ${best.toLocaleString()}`}
-            {deepestEndless > 0 && ` · Endless · Sermon ${deepestEndless}`}
-          </span>
-        )}
       </div>
     </div>
   )
