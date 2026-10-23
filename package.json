@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "package": "vite build && cd dist && rm -f ../ai-blood-cathedral.zip && zip -qr ../ai-blood-cathedral.zip .",
+    "sprites": "node scripts/generate-cathedral-sprites.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

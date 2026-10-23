@@ -1,11 +1,12 @@
-// Generates public/cathedral-sprites.png and public/ui/*.png: extra scenery and UI pieces in the style of
-// public/gothic-sprites.png (Endesga 32 palette, 1px ink outlines, light from the top-left).
+// Generates src/assets/cathedral-sprites.png and src/assets/ui/*.png (extra scenery and UI
+// pieces in the style of src/assets/gothic-sprites.png: Endesga 32 palette, 1px ink outlines,
+// light from the top-left), plus public/favicon.png and the public/og-image.png share card.
 // Every pixel is placed explicitly from the palette, so there is no anti-aliasing.
 //
 //   node scripts/generate-cathedral-sprites.mjs
 //
-// Prints the sprite rectangles that src/game/render.ts uses, and writes the UI frames in
-// public/ui/ that src/index.css 9-slices with border-image.
+// Prints the sprite rectangles that src/game/render.ts uses. The UI frames in src/assets/ui/
+// are 9-sliced by src/index.css with border-image.
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
@@ -488,11 +489,11 @@ function writeSheet(file, entries, width, height) {
     chunk('IDAT', deflateSync(raw)),
     chunk('IEND', Buffer.alloc(0)),
   ])
-  writeFileSync(new URL(`../public/${file}`, import.meta.url), png)
+  writeFileSync(new URL(`../${file}`, import.meta.url), png)
   return rects
 }
 
-console.log(JSON.stringify(writeSheet('cathedral-sprites.png', pieces, 256, 428)))
+console.log(JSON.stringify(writeSheet('src/assets/cathedral-sprites.png', pieces, 256, 428)))
 
 // ---------- UI frames (one PNG each, for CSS border-image 9-slicing) ----------
 // Built from the framed brick block in gothic-sprites.png (x 1, y 102): the same
@@ -558,8 +559,6 @@ function button(highlight, body, shadow, pressed = false) {
   return s
 }
 
-const STONE_FRAME = { A: C.stone2, B: C.stone1, C: C.stone0, D: C.stone3, E: C.stone4 }
-const BLOOD_FRAME = { A: C.blood2, B: C.blood1, C: C.blood0, D: C.blood3, E: C.rose }
 
 // Health orb (40×40) in three layers: empty glass, liquid (CSS clips it from the top to
 // show how full it is), and the stone ring with a glass glint drawn over both.
@@ -581,17 +580,6 @@ function orbLayer(paint) {
 const orbEmpty = orbLayer((x, y, r) => {
   if (r > ORB_INNER) return null
   return (x + y) % 2 === 0 && y > 24 ? C.stone0 : C.ink
-})
-const orbFill = orbLayer((x, y, r, dx, dy) => {
-  if (r > ORB_INNER) return null
-  const light = -(dx + dy) / (ORB_INNER * Math.SQRT2) // 1 at the top-left edge
-  const dither = (x + y) % 2 === 0
-  if ((x * 7 + y * 13) % 41 === 0 && r < ORB_INNER - 3) return C.rose
-  if (light > 0.55) return dither ? C.blood3 : C.blood2
-  if (light > 0.1) return C.blood2
-  if (light > -0.45) return dither ? C.blood2 : C.blood1
-  if (light > -0.75) return C.blood1
-  return dither ? C.blood1 : C.blood0
 })
 const orbFrame = orbLayer((x, y, r, dx, dy) => {
   if (r > 19.6) return null
@@ -651,27 +639,103 @@ function drop(full) {
 
 const uiPieces = {
   'orb-empty.png': orbEmpty,
-  'orb-fill.png': orbFill,
   'orb-fill-gold.png': orbFillGold,
+  'orb-frame.png': orbFrame,
   'pip-full.png': drop(true),
   'pip-empty.png': drop(false),
-  'orb-frame.png': orbFrame,
   'panel.png': woodFrame(26, C.ink),
-  'card.png': woodFrame(26, C.wood0),
-  'card-hover.png': woodFrame(26, C.wood0, { ...WOOD, A: C.gold1, D: C.cream }),
-  'slot.png': woodFrame(20, C.ink, STONE_FRAME, ['AD', 'D.']),
-  'slot-ready.png': woodFrame(20, C.ink, WOOD, ['AD', 'D.']),
-  'bar.png': woodFrame(10, C.ink, WOOD, []),
   'button.png': button(C.blood3, C.blood1, C.blood0),
   'button-hover.png': button(C.rose, C.blood2, C.blood0),
   'button-down.png': button(C.blood3, C.blood1, C.blood0, true),
   'button-stone.png': button(C.stone3, C.stone1, C.stone0),
   'button-stone-hover.png': button(C.stone4, C.stone2, C.stone0),
   'button-stone-down.png': button(C.stone3, C.stone1, C.stone0, true),
-  'chip.png': woodFrame(10, C.ink, BLOOD_FRAME, []),
 }
-mkdirSync(new URL('../public/ui/', import.meta.url), { recursive: true })
+mkdirSync(new URL('../src/assets/ui/', import.meta.url), { recursive: true })
 for (const [file, sprite] of Object.entries(uiPieces)) {
-  writeSheet(`ui/${file}`, { piece: [sprite, 0, 0] }, sprite.w, sprite.h)
+  writeSheet(`src/assets/ui/${file}`, { piece: [sprite, 0, 0] }, sprite.w, sprite.h)
 }
 console.log(`UI frames: ${Object.keys(uiPieces).join(', ')}`)
+
+// ---------- Favicon: the rose window, sampled down to 32×32 ----------
+const favicon = new Sprite(32, 32)
+for (let y = 0; y < 32; y += 1) for (let x = 0; x < 32; x += 1) favicon.set(x, y, rose.get(x * 3 + 1, y * 3 + 1))
+writeSheet('public/favicon.png', { piece: [favicon, 0, 0] }, 32, 32)
+
+// ---------- Share card (1200×630), drawn at 1/4 size and scaled up ----------
+const FONT = {
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  C: ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  I: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+  L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
+  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+}
+const CARD_W = 300
+const CARD_H = 158
+const card = new Sprite(CARD_W, CARD_H)
+const DIM = { [C.stone0]: C.ink, [C.stone1]: C.stone0, [C.stone2]: C.stone1, [C.moss0]: C.ink, [C.moss1]: C.stone0, [C.moss2]: C.stone0 }
+function blit(dst, src, ox, oy, map = {}) {
+  for (let y = 0; y < src.h; y += 1) {
+    for (let x = 0; x < src.w; x += 1) {
+      const color = src.get(x, y)
+      if (color) dst.set(ox + x, oy + y, map[color] ?? color)
+    }
+  }
+}
+function text(dst, string, ox, oy, scale, color, shadow) {
+  let cursor = ox
+  for (const char of string) {
+    const glyph = FONT[char]
+    if (glyph) {
+      glyph.forEach((row, y) =>
+        [...row].forEach((bit, x) => {
+          if (bit !== '#') return
+          for (let sy = 0; sy < scale; sy += 1) {
+            for (let sx = 0; sx < scale; sx += 1) {
+              dst.set(cursor + x * scale + sx + 1, oy + y * scale + sy + 1, shadow)
+              dst.set(cursor + x * scale + sx, oy + y * scale + sy, color)
+            }
+          }
+        }),
+      )
+    }
+    cursor += 6 * scale
+  }
+}
+const textWidth = (string, scale) => string.length * 6 * scale - scale
+// Dim wall, pillars, the rose window, a ledge for a floor, and a pair of portals.
+for (let y = 0; y < CARD_H; y += 16) for (let x = 0; x < CARD_W; x += 32) blit(card, [wallA, wallB, wallC][(x / 32 + y / 16) % 3 === 0 ? 1 : 0], x, y, DIM)
+for (const px of [18, CARD_W - 38]) for (let y = 0; y < CARD_H; y += 16) blit(card, shaft, px, y)
+blit(card, rose, (CARD_W - 96) / 2, 4)
+for (let x = 0; x < CARD_W; x += 16) blit(card, cornice, x, CARD_H - 8)
+blit(card, portalFrames.portalRed0[0], 66, 32)
+blit(card, portalFrames.portalBlue0[0], CARD_W - 90, 32)
+// Title on a dark band so it reads at thumbnail size.
+for (let y = 100; y < 136; y += 1) for (let x = 0; x < CARD_W; x += 1) card.set(x, y, C.ink)
+for (let x = 0; x < CARD_W; x += 1) {
+  card.set(x, 99, C.gold0)
+  card.set(x, 136, C.gold0)
+}
+const top = 'AI BLOOD'
+const bottom = 'CATHEDRAL'
+const titleWidth = textWidth(`${top} ${bottom}`, 2)
+text(card, top, (CARD_W - titleWidth) / 2, 104, 2, C.cream, C.blood0)
+text(card, bottom, (CARD_W - titleWidth) / 2 + textWidth(`${top} `, 2) + 2, 104, 2, C.blood3, C.blood0)
+const tagline = 'OUTLAST TWENTY SERMONS'
+text(card, tagline, Math.round((CARD_W - textWidth(tagline, 1)) / 2), 124, 1, C.stone4, C.ink)
+const og = new Sprite(1200, 630)
+for (let y = 0; y < 630; y += 1) for (let x = 0; x < 1200; x += 1) og.set(x, y, card.get(x >> 2, y >> 2))
+writeSheet('public/og-image.png', { piece: [og, 0, 0] }, 1200, 630)
+console.log('Favicon and share card written to public/')

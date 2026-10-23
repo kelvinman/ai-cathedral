@@ -1,3 +1,7 @@
+import atlasUrl from '../assets/gothic-sprites.png'
+import cathedralUrl from '../assets/cathedral-sprites.png'
+import enemyUrl from '../assets/enemy-sprite.png'
+import playerUrl from '../assets/player-sprite.png'
 import {
   BRICK,
   CANDLES,
@@ -36,7 +40,7 @@ const snap = (value: number) => Math.round(value / PX) * PX
 /** Centre height of the rose window, under the middle arch. */
 const ROSE_Y = 118
 
-/** Source rectangles in /gothic-sprites.png (160×128). */
+/** Source rectangles in src/assets/gothic-sprites.png (160×128). */
 export const ATLAS: Record<string, Rect> = {
   clock: [138, 0, 12, 32],
   mirrorA: [37, 1, 22, 30],
@@ -55,7 +59,7 @@ export const ATLAS: Record<string, Rect> = {
 }
 
 /**
- * Source rectangles in /cathedral-sprites.png: architecture made to match the sheet above.
+ * Source rectangles in src/assets/cathedral-sprites.png: architecture made to match the sheet above.
  * Regenerate with `node scripts/generate-cathedral-sprites.mjs`.
  */
 export const CATHEDRAL: Record<string, Rect> = {
@@ -393,10 +397,10 @@ let assetsPromise: Promise<Assets> | null = null
 
 export function loadAssets() {
   assetsPromise ??= Promise.all([
-    loadImage('/gothic-sprites.png'),
-    loadImage('/player-sprite.png'),
-    loadImage('/enemy-sprite.png'),
-    loadImage('/cathedral-sprites.png'),
+    loadImage(atlasUrl),
+    loadImage(playerUrl),
+    loadImage(enemyUrl),
+    loadImage(cathedralUrl),
   ]).then(([atlas, player, enemy, cathedral]) => {
     const skull = crop(atlas, ATLAS.skull)
     return {

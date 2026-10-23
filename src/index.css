@@ -3,7 +3,7 @@
 
 /*
  * Pixel-art UI. Colours come from the sprite sheet's palette (Endesga 32), frames are
- * 9-sliced from public/ui/*.png (made from the sheet's framed brick block by
+ * 9-sliced from src/assets/ui/*.png (made from the sheet's framed brick block by
  * scripts/generate-cathedral-sprites.mjs), and every UI pixel is drawn 3px wide.
  */
 
@@ -104,7 +104,7 @@
 
 .panel {
   border: calc(var(--px) * 8) solid transparent;
-  border-image: url('/ui/panel.png') 8 fill / calc(var(--px) * 8) repeat;
+  border-image: url('./assets/ui/panel.png') 8 fill / calc(var(--px) * 8) repeat;
 }
 
 .label {
@@ -178,7 +178,7 @@
   flex: none;
   width: calc(var(--orb-px) * 40);
   height: calc(var(--orb-px) * 40);
-  background: url('/ui/orb-empty.png') 0 0 / 100% 100%;
+  background: url('./assets/ui/orb-empty.png') 0 0 / 100% 100%;
   image-rendering: pixelated;
 }
 
@@ -191,12 +191,12 @@
 }
 
 .orb-fill {
-  background-image: url('/ui/orb-fill-gold.png');
+  background-image: url('./assets/ui/orb-fill-gold.png');
   clip-path: inset(calc(var(--fill-top) * var(--orb-px)) 0 0 0);
 }
 
 .orb-frame {
-  background-image: url('/ui/orb-frame.png');
+  background-image: url('./assets/ui/orb-frame.png');
 }
 
 .orb b {
@@ -234,12 +234,12 @@
 .health-pips i {
   width: 27px;
   height: 36px;
-  background: url('/ui/pip-empty.png') 0 0 / 100% 100%;
+  background: url('./assets/ui/pip-empty.png') 0 0 / 100% 100%;
   image-rendering: pixelated;
 }
 
 .health-pips i.is-full {
-  background-image: url('/ui/pip-full.png');
+  background-image: url('./assets/ui/pip-full.png');
 }
 
 .health-pips.is-low i.is-full:last-of-type,
@@ -308,7 +308,7 @@
   height: 44px;
   place-items: center;
   border: 10px solid transparent;
-  border-image: url('/ui/button-stone.png') 5 fill / 10px repeat;
+  border-image: url('./assets/ui/button-stone.png') 5 fill / 10px repeat;
   image-rendering: pixelated;
   font-size: 12px;
   color: var(--cream);
@@ -391,7 +391,7 @@
 
 .atlas-icon {
   display: block;
-  background-image: url('/gothic-sprites.png');
+  background-image: url('./assets/gothic-sprites.png');
   background-repeat: no-repeat;
   image-rendering: pixelated;
 }
@@ -569,7 +569,7 @@
 .sigil {
   width: 96px;
   height: 96px;
-  background: url('/cathedral-sprites.png') -128px -16px no-repeat;
+  background: url('./assets/cathedral-sprites.png') -128px -16px no-repeat;
   image-rendering: pixelated;
   filter: drop-shadow(var(--px) var(--px) 0 var(--ink));
 }
@@ -592,13 +592,13 @@
 
 .primary {
   border: calc(var(--px) * 5) solid transparent;
-  border-image: url('/ui/button.png') 5 fill / calc(var(--px) * 5) repeat;
+  border-image: url('./assets/ui/button.png') 5 fill / calc(var(--px) * 5) repeat;
   color: var(--cream);
 }
 
 .secondary {
   border: calc(var(--px) * 5) solid transparent;
-  border-image: url('/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
+  border-image: url('./assets/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
   color: var(--cream);
 }
 
@@ -609,11 +609,11 @@
 
 @media (hover: hover) {
   .primary:not(:disabled):hover {
-    border-image-source: url('/ui/button-hover.png');
+    border-image-source: url('./assets/ui/button-hover.png');
   }
 
   .secondary:hover {
-    border-image-source: url('/ui/button-stone-hover.png');
+    border-image-source: url('./assets/ui/button-stone-hover.png');
   }
 
   .ghost:hover {
@@ -622,12 +622,12 @@
 }
 
 .primary:not(:disabled):active {
-  border-image-source: url('/ui/button-down.png');
+  border-image-source: url('./assets/ui/button-down.png');
   padding-top: calc(var(--px) * 2);
 }
 
 .secondary:active {
-  border-image-source: url('/ui/button-stone-down.png');
+  border-image-source: url('./assets/ui/button-stone-down.png');
   padding-top: calc(var(--px) * 2);
 }
 
@@ -903,7 +903,7 @@
   height: 60px;
   place-items: center;
   border: calc(var(--px) * 5) solid transparent;
-  border-image: url('/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
+  border-image: url('./assets/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
   font-family: var(--label);
   font-size: 16px;
   color: var(--cream);
@@ -914,17 +914,17 @@
 .touch-button.is-large {
   width: 76px;
   height: 76px;
-  border-image-source: url('/ui/button.png');
+  border-image-source: url('./assets/ui/button.png');
   font-size: 12px;
   text-transform: uppercase;
 }
 
 .touch-button:active {
-  border-image-source: url('/ui/button-stone-down.png');
+  border-image-source: url('./assets/ui/button-stone-down.png');
 }
 
 .touch-button.is-large:active {
-  border-image-source: url('/ui/button-down.png');
+  border-image-source: url('./assets/ui/button-down.png');
 }
 
 .rotate-hint {
