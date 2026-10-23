@@ -8,7 +8,7 @@ export const CREDITS: { heading: string; lines: string[] }[] = [
   { heading: 'Design and development', lines: [] },
   {
     heading: 'Built with',
-    lines: ['Claude (Anthropic): code, pixel art generation, writing', 'React, Vite and TypeScript'],
+    lines: ['First prototyped in Figma Make', 'Claude (Anthropic): code, pixel art generation, writing', 'React, Vite and TypeScript'],
   },
   {
     heading: 'Fonts',
