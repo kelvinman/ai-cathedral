@@ -467,7 +467,7 @@ const enemyStats: Record<
   // Acolytes and zealots match the player's on-screen height; bishops stay a head taller.
   acolyte: { w: 30, h: 72, hp: 42, speed: 105, damage: 12, kb: 0, score: 100, scale: PLAYER_SCALE * (94 / 84) },
   zealot: { w: 28, h: 72, hp: 26, speed: 175, damage: 10, kb: 0.1, score: 140, scale: PLAYER_SCALE * (94 / 84) },
-  bishop: { w: 42, h: 88, hp: 170, speed: 62, damage: 22, kb: 0.7, score: 300, scale: PLAYER_SCALE * (94 / 84) * 1.2 },
+  bishop: { w: 42, h: 88, hp: 170, speed: 62, damage: 16, kb: 0.7, score: 300, scale: PLAYER_SCALE * (94 / 84) * 1.2 },
   wisp: { w: 26, h: 26, hp: 18, speed: 135, damage: 8, kb: 0, score: 120, scale: 1 },
 }
 

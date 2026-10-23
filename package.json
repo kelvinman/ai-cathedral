@@ -9,20 +9,22 @@
     "preview": "vite preview",
     "format": "oxfmt",
     "package": "vite build && cd dist && rm -f ../ai-blood-cathedral.zip && zip -qr ../ai-blood-cathedral.zip .",
-    "sprites": "node scripts/generate-cathedral-sprites.mjs"
+    "sprites": "node scripts/generate-cathedral-sprites.mjs",
+    "balance": "tsx scripts/balance.ts"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
-    "tailwindcss": "^4.0.0",
-    "@tailwindcss/vite": "^4.0.0",
     "oxfmt": "^0.2.0",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vite": "^8.0.5"
   }
