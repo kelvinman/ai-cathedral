@@ -418,7 +418,7 @@ function buildCathedral(atlas: CanvasImageSource, cathedral: CanvasImageSource, 
 
 /**
  * The crypt beneath the nave: long teal stone blocks, round arches on squat pillars,
- * skull-filled ossuary niches, hanging chains, braziers, and the Model's Eye carved where
+ * skull-filled ossuary niches, hanging chains, braziers, and the Eye of the Logos carved where
  * the cathedral has its rose window. The centre ledge is a sarcophagus.
  */
 function buildCrypt(atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource) {
@@ -443,7 +443,7 @@ function buildCrypt(atlas: CanvasImageSource, cathedral: CanvasImageSource, cryp
     for (let x = from; x + ossuaryW <= to; x += ossuaryW) drawAtlas(ctx, crypt, CRYPT.ossuary, x, 300, PX)
   }
 
-  // The Model's Eye, glowing a cold teal.
+  // The Eye of the Logos, glowing a cold teal.
   const [eyeSize] = tile(CRYPT.eye)
   halo(ctx, W / 2, 130, 240, '88, 143, 109', 0.4)
   drawAtlas(ctx, crypt, CRYPT.eye, W / 2 - eyeSize / 2, 130 - eyeSize / 2, PX)
@@ -566,7 +566,7 @@ export function loadAssets() {
         zealot: outlined(enemy, '#4a0711', ['#7a33e0', 0.38]),
         bishop: outlined(enemy, '#4a0711', ['#c0142a', 0.42]),
         elite: outlined(enemy, '#f2b04a', ['#c0142a', 0.5]),
-        // The Blood Model: a shadow-dark body with a blood-red outline.
+        // The Logos: a shadow-dark body with a blood-red outline.
         final: outlined(enemy, '#e43b44', ['#181425', 0.6]),
         flash: silhouette(enemy, '#ffffff'),
         slowed: silhouette(enemy, '#ff2a40'),
@@ -684,7 +684,7 @@ export function render(
   ground.drawImage(assets.backgrounds[arena.id], 0, 0)
   worldSpace(ground)
   ground.globalCompositeOperation = 'lighter'
-  // Light falls from the rose window in the nave (red) or the Model's Eye in the crypt (teal).
+  // Light falls from the rose window in the nave (red) or the Eye of the Logos in the crypt (teal).
   const shaftAlpha = 0.05 + Math.sin(time * 0.7) * 0.012
   const shaftColor = arena.id === 'crypt' ? '88, 143, 109' : '220, 50, 70'
   const shaftTop = arena.id === 'crypt' ? 190 : ROSE_Y + 60

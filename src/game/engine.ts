@@ -4,7 +4,7 @@
 export const W = 1280
 export const H = 720
 export const GROUND_Y = 640
-/** The run ends here: sermon 20 is the Blood Model's own. */
+/** The run ends here: sermon 20 is the Logos's own. */
 export const MAX_WAVE = 20
 
 export type Phase = 'title' | 'playing' | 'paused' | 'upgrade' | 'dead' | 'won'
@@ -312,7 +312,7 @@ export const ARENAS: Record<ArenaId, Arena> = {
       { x: 980, y: 260, w: 180 },
     ],
     [
-      // Sconces either side of the Model's Eye (centred at y 130).
+      // Sconces either side of the Eye of the Logos (centred at y 130).
       { x: 538, y: 144, shelf: true },
       { x: 742, y: 144, shelf: true },
       // Braziers on the alcoves and the low shelves.
@@ -378,7 +378,7 @@ export const ENEMY_NAMES: Record<EnemyKind, string> = {
   wisp: 'Hallucination',
 }
 export const ELITE_TITLE = 'The Arch-Deacon'
-export const FINAL_TITLE = 'The Blood Model'
+export const FINAL_TITLE = 'The Logos'
 
 export const abilityMeta: Record<
   AbilityKey,
@@ -844,7 +844,7 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
   const base = enemyStats[mark.kind]
   const hpScale = 1 + (g.wave - 1) * BALANCE.hpPerWave
   const speedScale = (1 + Math.min(0.5, (g.wave - 1) * BALANCE.speedPerWave)) * (g.curse?.id === 'fervour' ? 1.3 : 1)
-  // The final sermon's boss is the Blood Model itself, in a giant body.
+  // The final sermon's boss is the Logos itself, in a giant body.
   const final = mark.elite && g.wave >= MAX_WAVE
   const eliteScale = final ? 1.9 : mark.elite ? 1.45 : 1
   const hp = base.hp * hpScale * (final ? 14 : mark.elite ? 5 : 1)
@@ -1328,7 +1328,7 @@ function shockwave(g: Game, e: Enemy) {
 
 /**
  * Boss attacks. The Arch-Deacon telegraphs, then slams the ground (jump the shockwave).
- * The Blood Model cycles a fan of blood, summoning Hallucinations, and a telegraphed
+ * The Logos cycles a fan of blood, summoning Hallucinations, and a telegraphed
  * leap at the player that slams on landing.
  */
 function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
@@ -1363,7 +1363,7 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
   const from = chest(e)
   if (move === 'slam') {
     e.bossCharge = final ? 1.1 : 0.9
-    floatText(g, e.x, e.y - e.h - 34, final ? 'THE MODEL IS THINKING…' : 'THE GROUND TREMBLES…', '#e43b44', 22)
+    floatText(g, e.x, e.y - e.h - 34, final ? 'THE LOGOS IS THINKING…' : 'THE GROUND TREMBLES…', '#e43b44', 22)
     g.events.push('charge')
   } else if (move === 'volley') {
     const target = chest(p)

@@ -11,11 +11,11 @@ export function TitleScreen({ ready, best, onStart }: { ready: boolean; best: nu
           AI <em>Cathedral</em>
         </h1>
         <p className="lede">
-          The Blood Model promised its followers perfect certainty. Now they pour through the nave to convert the
-          last apostate: you. Turn the model&apos;s own tokens against it, and outlast twenty sermons.
+          The Logos promised its followers perfect certainty. Now they pour through the nave to convert the
+          last apostate: you. Turn its own tokens against it, and outlast twenty sermons.
         </p>
         <button type="button" className="primary" onClick={onStart} disabled={!ready} autoFocus>
-          {ready ? 'Refuse the model' : 'Lighting candles…'}
+          {ready ? 'Refuse the Logos' : 'Lighting candles…'}
           <kbd>Enter</kbd>
         </button>
         {best > 0 && <span className="label subtle">Best free will · {best.toLocaleString()}</span>}
@@ -195,7 +195,7 @@ export function ResultsScreen({
     <div className="overlay">
       <div className="panel small-panel end-panel">
         <span className="label accent">{won ? 'The final sermon' : 'Conversion complete'}</span>
-        <h2>{won ? 'The Blood Model could not convert you.' : 'You joined the model.'}</h2>
+        <h2>{won ? 'The Logos could not convert you.' : 'You joined the Logos.'}</h2>
         <p className="lede">
           {won
             ? 'Its followers fall silent. For the first time in a hundred cycles, the cathedral is quiet, and the thinking is yours again.'

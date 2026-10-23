@@ -4,17 +4,17 @@ export const pad = (value: number) => String(value).padStart(2, '0')
 
 /** The line over each sermon's banner: who is joining, and when the bosses arrive. */
 export function sermonLine(wave: number) {
-  if (wave >= MAX_WAVE) return 'The Blood Model speaks'
+  if (wave >= MAX_WAVE) return 'The Logos speaks'
   if (wave === 1) return `${ENEMY_NAMES.acolyte}s fill the nave`
   // Chapters change arena every five sermons (see arenaForWave).
   if (wave === 6) return 'Descend into the crypt'
   if (wave === 11) return 'Back up into the nave'
-  if (wave === 16) return "Down to the Blood Model's tomb"
+  if (wave === 16) return 'Down to the tomb of the Logos'
   if (wave === 2) return `${ENEMY_NAMES.zealot}s and ${ENEMY_NAMES.wisp}s join the sermon`
   if (wave === 5) return `The Arch-Deacon leads the ${ENEMY_NAMES.bishop}s in`
   if (isEliteWave(wave)) return 'The Arch-Deacon returns'
-  if (wave === MAX_WAVE - 1) return 'The model is almost done thinking'
-  return 'The model is thinking'
+  if (wave === MAX_WAVE - 1) return 'The Logos is almost done thinking'
+  return 'The Logos is thinking'
 }
 
 /** "an Evangelist", "a Hype Bishop", "the Arch-Deacon". */

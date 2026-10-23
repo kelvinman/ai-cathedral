@@ -616,7 +616,7 @@ const sarcophagus = new Sprite(150, 70)
   s.outline()
 }
 
-// The Model's Eye: a carved stone seal that stands in for the rose window (72×72).
+// The Eye of the Logos: a carved stone seal that stands in for the rose window (72×72).
 const modelEye = new Sprite(72, 72)
 {
   const c = 35.5
