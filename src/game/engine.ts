@@ -90,7 +90,7 @@ export type Enemy = Body & {
   lunge: number
   /** Mid-air in a climbing leap: steering is locked until it lands. */
   leaping: boolean
-  /** Index into SURFACES of the floor or ledge it last stood on (-1 before landing). */
+  /** Index into the arena's surfaces of the floor or ledge it last stood on (-1 before landing). */
   surface: number
   /** Wisps only: time until the next blood spit. */
   spitCd: number
@@ -229,51 +229,110 @@ export type Game = {
   lastHurtBy: string
   /** This sermon's twist, if it is cursed. */
   curse: Curse | null
+  /** Where this sermon is fought. */
+  arena: Arena
 }
 
 /** Widths are whole multiples of the 60px brick block the renderer tiles them with. */
 export const BRICK = { w: 60, h: 34 }
-export const PLATFORMS: Platform[] = [
-  { x: 90, y: 530, w: 240 },
-  { x: 950, y: 530, w: 240 },
-  { x: 490, y: 430, w: 300 },
-  { x: 170, y: 320, w: 240 },
-  { x: 870, y: 320, w: 240 },
-  { x: 520, y: 212, w: 240 },
-]
 
-/**
- * Candles flank the windows on wall sconces, centred on each window's height.
- * `y` is where the candelabra stands (the top of its shelf); the flames sit ~14px above.
- */
-export const CANDLES: (Point & { shelf?: boolean })[] = [
-  // Arched windows (upper side bays, y 84–204).
-  { x: 150, y: 158, shelf: true },
-  { x: 286, y: 158, shelf: true },
-  { x: 994, y: 158, shelf: true },
-  { x: 1130, y: 158, shelf: true },
-  // Mirrors (lower side bays, centred at y 444).
-  { x: 150, y: 458, shelf: true },
-  { x: 286, y: 458, shelf: true },
-  { x: 994, y: 458, shelf: true },
-  { x: 1130, y: 458, shelf: true },
-  // Rose window (centred at y 118).
-  { x: 512, y: 132, shelf: true },
-  { x: 768, y: 132, shelf: true },
-  // Lancet window over the centre ledge (centred at y 360).
-  { x: 572, y: 374, shelf: true },
-  { x: 708, y: 374, shelf: true },
-]
-
-/** Pentagram gates: stepping into one sends you out of its partner. Pairs cross the nave. */
+/** Pentagram gates: stepping into one sends you out of its partner. Pairs cross the room. */
 export type Portal = Point & { pair: number; color: 'red' | 'blue' }
-export const PORTALS: Portal[] = [
-  // Floor gates flank the basin under the centre ledge, where there is headroom.
-  { x: 547, y: GROUND_Y, pair: 1, color: 'red' },
-  { x: 910, y: 320, pair: 0, color: 'red' },
-  { x: 733, y: GROUND_Y, pair: 3, color: 'blue' },
-  { x: 370, y: 320, pair: 2, color: 'blue' },
-]
+/** A light source. Candelabras stand on ledges or wall sconces (`shelf`); braziers burn on ledges. */
+export type Candle = Point & { shelf?: boolean; brazier?: boolean }
+
+export type ArenaId = 'cathedral' | 'crypt'
+export type Arena = {
+  id: ArenaId
+  name: string
+  platforms: Platform[]
+  /** The floor followed by every ledge: what follower pathfinding walks between. */
+  surfaces: Platform[]
+  candles: Candle[]
+  portals: Portal[]
+}
+
+function arena(id: ArenaId, name: string, platforms: Platform[], candles: Candle[], portals: Portal[]): Arena {
+  return { id, name, platforms, surfaces: [{ x: -100, y: GROUND_Y, w: W + 200 }, ...platforms], candles, portals }
+}
+
+export const ARENAS: Record<ArenaId, Arena> = {
+  cathedral: arena(
+    'cathedral',
+    'The Nave',
+    [
+      { x: 90, y: 530, w: 240 },
+      { x: 950, y: 530, w: 240 },
+      { x: 490, y: 430, w: 300 },
+      { x: 170, y: 320, w: 240 },
+      { x: 870, y: 320, w: 240 },
+      { x: 520, y: 212, w: 240 },
+    ],
+    // Candles flank the windows on wall sconces, centred on each window's height. `y` is
+    // where the candelabra stands (the top of its shelf); the flames sit ~14px above.
+    [
+      // Arched windows (upper side bays, y 84–204).
+      { x: 150, y: 158, shelf: true },
+      { x: 286, y: 158, shelf: true },
+      { x: 994, y: 158, shelf: true },
+      { x: 1130, y: 158, shelf: true },
+      // Mirrors (lower side bays, centred at y 444).
+      { x: 150, y: 458, shelf: true },
+      { x: 286, y: 458, shelf: true },
+      { x: 994, y: 458, shelf: true },
+      { x: 1130, y: 458, shelf: true },
+      // Rose window (centred at y 118).
+      { x: 512, y: 132, shelf: true },
+      { x: 768, y: 132, shelf: true },
+      // Lancet window over the centre ledge (centred at y 360).
+      { x: 572, y: 374, shelf: true },
+      { x: 708, y: 374, shelf: true },
+    ],
+    [
+      // Floor gates under the centre ledge, where there is headroom.
+      { x: 547, y: GROUND_Y, pair: 1, color: 'red' },
+      { x: 910, y: 320, pair: 0, color: 'red' },
+      { x: 733, y: GROUND_Y, pair: 3, color: 'blue' },
+      { x: 370, y: 320, pair: 2, color: 'blue' },
+    ],
+  ),
+  // The crypt: low shelves along the walls, a sarcophagus in the middle, stepping stones up
+  // to a bridge, and high alcoves in the corners. Every ledge is one jump from another.
+  crypt: arena(
+    'crypt',
+    'The Crypt',
+    [
+      { x: 60, y: 540, w: 300 },
+      { x: 920, y: 540, w: 300 },
+      { x: 490, y: 500, w: 300 },
+      { x: 260, y: 400, w: 180 },
+      { x: 840, y: 400, w: 180 },
+      { x: 520, y: 300, w: 240 },
+      { x: 120, y: 260, w: 180 },
+      { x: 980, y: 260, w: 180 },
+    ],
+    [
+      // Sconces either side of the Model's Eye (centred at y 130).
+      { x: 538, y: 144, shelf: true },
+      { x: 742, y: 144, shelf: true },
+      // Braziers on the alcoves and the low shelves.
+      { x: 138, y: 260, brazier: true },
+      { x: 1142, y: 260, brazier: true },
+      { x: 82, y: 540, brazier: true },
+      { x: 1198, y: 540, brazier: true },
+    ],
+    [
+      { x: 420, y: GROUND_Y, pair: 1, color: 'red' },
+      { x: 1070, y: 260, pair: 0, color: 'red' },
+      { x: 860, y: GROUND_Y, pair: 3, color: 'blue' },
+      { x: 210, y: 260, pair: 2, color: 'blue' },
+    ],
+  ),
+}
+
+/** Sermons alternate in chapters of five: nave, crypt, nave, then the crypt for the finale. */
+export const arenaForWave = (wave: number): ArenaId => (Math.floor((wave - 1) / 5) % 2 === 0 ? 'cathedral' : 'crypt')
+
 export const PORTAL_SIZE = { w: 48, h: 80 }
 
 /**
@@ -581,6 +640,7 @@ export function makeGame(): Game {
     playerSurface: 0,
     lastHurtBy: '',
     curse: null,
+    arena: ARENAS.cathedral,
   }
 }
 
@@ -603,7 +663,7 @@ function overlaps(a: Body, b: Body) {
 }
 
 /** Integrate a body and land it on one-way platforms or the floor. */
-function moveBody(body: Body, dt: number) {
+function moveBody(body: Body, dt: number, platforms: Platform[]) {
   const previousY = body.y
   body.x += body.vx * dt
   body.y += body.vy * dt
@@ -612,7 +672,7 @@ function moveBody(body: Body, dt: number) {
   body.onPlatform = false
   if (body.vy >= 0 && body.dropTimer <= 0) {
     const half = body.w * 0.4
-    for (const platform of PLATFORMS) {
+    for (const platform of platforms) {
       if (
         previousY <= platform.y + 1 &&
         body.y >= platform.y &&
@@ -716,7 +776,7 @@ function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: num
 
 /**
  * Cursed sermons: from sermon 3, about one normal sermon in four gets a twist.
- * Boss sermons are never cursed.
+ * Boss sermons and sermons that change arena are never cursed.
  */
 export type CurseId = 'storm' | 'zealotry' | 'fervour' | 'weightless' | 'fasting'
 export type Curse = { id: CurseId; name: string }
@@ -770,7 +830,7 @@ function queueSpawn(g: Game) {
       { x: W - 40, y: GROUND_Y },
     ]
     if (g.wave >= 3) {
-      for (const platform of PLATFORMS) options.push({ x: platform.x + platform.w / 2, y: platform.y })
+      for (const platform of g.arena.platforms) options.push({ x: platform.x + platform.w / 2, y: platform.y })
     }
     const fair = options.filter((option) => Math.hypot(option.x - p.x, option.y - p.y) > 260)
     const pool = fair.length ? fair : options
@@ -803,7 +863,7 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     onPlatform: false,
     dropTimer: 0,
     // A follower that spawns inside a gate shouldn't be flung through it straight away.
-    portalLock: PORTALS.findIndex((portal) => Math.abs(portal.x - mark.x) < 30 && Math.abs(portal.y - mark.y) < 4),
+    portalLock: g.arena.portals.findIndex((portal) => Math.abs(portal.x - mark.x) < 30 && Math.abs(portal.y - mark.y) < 4),
     hp,
     maxHp: hp,
     speed: base.speed * speedScale * (mark.elite ? 0.9 : 1),
@@ -836,14 +896,33 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
   g.events.push('spawn')
 }
 
+/** Move the fight to another arena: the player starts on the floor and old effects are cleared. */
+function enterArena(g: Game, id: ArenaId) {
+  g.arena = ARENAS[id]
+  const p = g.player
+  Object.assign(p, { x: W / 2, y: GROUND_Y, vx: 0, vy: 0, portalLock: -1, dropTimer: 0 })
+  g.playerSurface = 0
+  g.seals = []
+  g.glyphs = []
+  g.pickups = []
+  g.spits = []
+  g.stains = []
+  g.ghosts = []
+  g.bolts = []
+}
+
 export function startWave(g: Game) {
+  const id = arenaForWave(g.wave)
+  const moving = g.arena.id !== id
+  if (moving) enterArena(g, id)
   g.waveState = 'intro'
   g.waveTimer = 2.2
   g.waveTotal = waveTotal(g.wave)
   g.spawned = 0
   g.waveKills = 0
   g.spawnTimer = 0.2
-  const cursable = g.wave >= 3 && !isEliteWave(g.wave) && g.wave < MAX_WAVE
+  // Never on boss sermons, or on a sermon that moves arena (its banner announces the move).
+  const cursable = g.wave >= 3 && !isEliteWave(g.wave) && g.wave < MAX_WAVE && !moving
   g.curse = cursable && Math.random() < 0.25 ? CURSES[Math.floor(Math.random() * CURSES.length)] : null
   g.events.push('wave')
 }
@@ -1044,8 +1123,8 @@ function updatePlayer(g: Game, input: Input, dt: number) {
     p.vy = Math.min(1150, p.vy + (p.vy > 0 ? FALL_GRAVITY : GRAVITY) * gravityScale(g) * dt)
   }
 
-  moveBody(p, dt)
-  const playerOn = surfaceAt(p)
+  moveBody(p, dt, g.arena.platforms)
+  const playerOn = surfaceAt(p, g.arena.platforms)
   if (playerOn >= 0) g.playerSurface = playerOn
   usePortals(g, p)
   if (p.x < 18 || p.x > W - 18) {
@@ -1128,14 +1207,13 @@ function updateWave(g: Game, dt: number) {
  * or drop through). Followers walk to the take-off point for the next hop, then jump
  * with exactly the sideways speed needed to land on it.
  */
-const SURFACES: Platform[] = [{ x: -100, y: GROUND_Y, w: W + 200 }, ...PLATFORMS]
 const MAX_LEAP = 230
 
-/** Index into SURFACES of whatever the body is standing on, or -1 in the air. */
-function surfaceAt(body: Body) {
+/** Index into the arena's surfaces of whatever the body is standing on, or -1 in the air. */
+function surfaceAt(body: Body, platforms: Platform[]) {
   if (!body.onGround) return -1
   if (!body.onPlatform) return 0
-  const index = PLATFORMS.findIndex(
+  const index = platforms.findIndex(
     (platform) => Math.abs(platform.y - body.y) < 1 && body.x > platform.x - body.w && body.x < platform.x + platform.w + body.w,
   )
   return index + 1
@@ -1144,14 +1222,14 @@ function surfaceAt(body: Body) {
 const jumpSpeed = (e: Enemy) => (e.kind === 'bishop' ? 860 : 900)
 const gapBetween = (a: Platform, b: Platform) => Math.max(0, b.x - (a.x + a.w), a.x - (b.x + b.w))
 
-function nextHop(from: number, to: number, maxRise: number) {
+function nextHop(surfaces: Platform[], from: number, to: number, maxRise: number) {
   const previous = new Map<number, number>([[from, from]])
   const queue = [from]
   while (queue.length) {
     const current = queue.shift()!
     if (current === to) break
-    const a = SURFACES[current]
-    SURFACES.forEach((b, index) => {
+    const a = surfaces[current]
+    surfaces.forEach((b, index) => {
       if (previous.has(index) || index === current) return
       const climbable = b.y < a.y && a.y - b.y <= maxRise && gapBetween(a, b) <= MAX_LEAP - 60
       if (climbable || b.y > a.y) {
@@ -1169,13 +1247,13 @@ function nextHop(from: number, to: number, maxRise: number) {
 type Plan = { moveX: number; jumpTo?: number; rise?: number; drop?: boolean }
 
 /** Where to walk, and whether to jump or drop, to get from this surface toward the player's. */
-function planRoute(e: Enemy, goal: number, fallbackX: number, gravity: number): Plan {
+function planRoute(surfaces: Platform[], e: Enemy, goal: number, fallbackX: number, gravity: number): Plan {
   if (e.surface < 0 || goal < 0 || e.surface === goal) return { moveX: fallbackX }
   const v = jumpSpeed(e)
-  const next = nextHop(e.surface, goal, (v * v) / (2 * gravity) - 12)
+  const next = nextHop(surfaces, e.surface, goal, (v * v) / (2 * gravity) - 12)
   if (next < 0) return { moveX: fallbackX }
-  const a = SURFACES[e.surface]
-  const b = SURFACES[next]
+  const a = surfaces[e.surface]
+  const b = surfaces[next]
   if (b.y > a.y) {
     const above = e.x > b.x + 10 && e.x < b.x + b.w - 10
     if (above && e.surface !== 0) return { moveX: e.x, drop: true }
@@ -1207,11 +1285,12 @@ function planRoute(e: Enemy, goal: number, fallbackX: number, gravity: number): 
 function usePortals(g: Game, body: Body, target?: Point) {
   const inside = (portal: Portal) =>
     Math.abs(body.x - portal.x) < 30 && body.y <= portal.y + 2 && body.y > portal.y - PORTAL_SIZE.h + 10
-  if (body.portalLock >= 0 && !inside(PORTALS[body.portalLock])) body.portalLock = -1
-  const entry = PORTALS.findIndex((portal, index) => index !== body.portalLock && inside(portal))
+  const portals = g.arena.portals
+  if (body.portalLock >= 0 && !inside(portals[body.portalLock])) body.portalLock = -1
+  const entry = portals.findIndex((portal, index) => index !== body.portalLock && inside(portal))
   if (entry < 0) return
-  const from = PORTALS[entry]
-  const to = PORTALS[from.pair]
+  const from = portals[entry]
+  const to = portals[from.pair]
   if (target && Math.hypot(to.x - target.x, to.y - target.y) >= Math.hypot(from.x - target.x, from.y - target.y)) return
   const color = from.color === 'red' ? '#e43b44' : '#c0cbdc'
   burst(g, from.x, from.y - 40, color, 16, 260, { glow: true, size: 3 })
@@ -1226,7 +1305,7 @@ function usePortals(g: Game, body: Body, target?: Point) {
 
 /** Slam shockwaves roll both ways along the surface the boss is standing on. */
 function shockwave(g: Game, e: Enemy) {
-  const surface = SURFACES[Math.max(0, e.surface)]
+  const surface = g.arena.surfaces[Math.max(0, e.surface)]
   const final = e.title === FINAL_TITLE
   for (const direction of [-1, 1]) {
     g.spits.push({
@@ -1384,7 +1463,7 @@ function updateEnemies(g: Game, dt: number) {
         e.vx = approach(e.vx, 0, 2400 * dt)
       } else if (canAct && e.lunge <= 0) {
         const gravity = GRAVITY * gravityScale(g)
-        const plan = planRoute(e, g.playerSurface, target.x, gravity)
+        const plan = planRoute(g.arena.surfaces, e, g.playerSurface, target.x, gravity)
         const toTarget = plan.moveX - e.x
         const targetVx = Math.abs(toTarget) < 6 ? 0 : Math.sign(toTarget) * e.speed * slowFactor
         // A climbing leap keeps its speed and direction until it lands; re-steering
@@ -1415,8 +1494,8 @@ function updateEnemies(g: Game, dt: number) {
         e.vx = approach(e.vx, 0, 900 * dt)
       }
       e.vy = Math.min(1150, e.vy + GRAVITY * gravityScale(g) * dt)
-      moveBody(e, dt)
-      const standingOn = surfaceAt(e)
+      moveBody(e, dt, g.arena.platforms)
+      const standingOn = surfaceAt(e, g.arena.platforms)
       if (standingOn >= 0) e.surface = standingOn
       if (e.title) bossBrain(g, e, dt, canAct)
       usePortals(g, e, p)
@@ -1592,7 +1671,7 @@ function updatePickups(g: Game, dt: number) {
     } else {
       pickup.vx = approach(pickup.vx, 0, 300 * dt)
       pickup.vy = Math.min(900, pickup.vy + GRAVITY * 0.6 * gravityScale(g) * dt)
-      moveBody(pickup, dt)
+      moveBody(pickup, dt, g.arena.platforms)
     }
     if (distance < 30) {
       pickup.life = 0

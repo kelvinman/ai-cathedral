@@ -6,6 +6,10 @@ export const pad = (value: number) => String(value).padStart(2, '0')
 export function sermonLine(wave: number) {
   if (wave >= MAX_WAVE) return 'The Blood Model speaks'
   if (wave === 1) return `${ENEMY_NAMES.acolyte}s fill the nave`
+  // Chapters change arena every five sermons (see arenaForWave).
+  if (wave === 6) return 'Descend into the crypt'
+  if (wave === 11) return 'Back up into the nave'
+  if (wave === 16) return "Down to the Blood Model's tomb"
   if (wave === 2) return `${ENEMY_NAMES.zealot}s and ${ENEMY_NAMES.wisp}s join the sermon`
   if (wave === 5) return `The Arch-Deacon leads the ${ENEMY_NAMES.bishop}s in`
   if (isEliteWave(wave)) return 'The Arch-Deacon returns'

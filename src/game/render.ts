@@ -1,18 +1,20 @@
 import atlasUrl from '../assets/gothic-sprites.png'
 import cathedralUrl from '../assets/cathedral-sprites.png'
+import cryptUrl from '../assets/crypt-sprites.png'
 import enemyUrl from '../assets/enemy-sprite.png'
 import playerUrl from '../assets/player-sprite.png'
 import {
   BRICK,
-  CANDLES,
+  ARENAS,
   GROUND_Y,
   H,
-  PLATFORMS,
   PLAYER_SCALE,
-  PORTALS,
   FINAL_TITLE,
   W,
+  type Arena,
+  type ArenaId,
   type Enemy,
+  type Platform,
   type Game,
   type Point,
 } from './engine'
@@ -87,10 +89,30 @@ export const CATHEDRAL: Record<string, Rect> = {
   portalBlue3: [168, 386, 24, 40],
 }
 
+/**
+ * Source rectangles in src/assets/crypt-sprites.png: the crypt arena's scenery.
+ * Regenerate with `pnpm sprites`.
+ */
+export const CRYPT: Record<string, Rect> = {
+  wallA: [0, 0, 32, 16],
+  wallB: [32, 0, 32, 16],
+  ossuary: [64, 0, 32, 16],
+  blockA: [96, 0, 30, 17],
+  blockB: [126, 0, 30, 17],
+  blockC: [156, 0, 30, 17],
+  brazier: [186, 0, 16, 18],
+  chain: [202, 0, 4, 8],
+  bones: [206, 0, 40, 12],
+  eye: [0, 18, 72, 72],
+  sarcophagus: [72, 18, 150, 70],
+  sideArch: [0, 92, 188, 96],
+  middleArch: [0, 190, 240, 122],
+}
+
 export type Assets = {
   atlas: HTMLImageElement
   cathedral: HTMLImageElement
-  background: HTMLCanvasElement
+  backgrounds: Record<ArenaId, HTMLCanvasElement>
   vignette: HTMLCanvasElement
   redVignette: HTMLCanvasElement
   player: { base: Sprite; flash: Sprite; ghost: Sprite }
@@ -224,19 +246,24 @@ function pentagram(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
 const BLOCKS = [ATLAS.brickA, ATLAS.brickB, ATLAS.painting]
 const blockAt = (index: number) => BLOCKS[((index % 3) + 3) % 3]
 
-function drawPlatform(
-  ctx: CanvasRenderingContext2D,
-  atlas: CanvasImageSource,
-  cathedral: CanvasImageSource,
-  platformIndex: number,
-  random: () => number,
-) {
-  const { x, y, w } = PLATFORMS[platformIndex]
-  // Stepped drop shadow on the wall behind.
+/** Stepped drop shadow on the wall behind a ledge. */
+function ledgeShadow(ctx: CanvasRenderingContext2D, { x, y, w }: Platform) {
   for (let step = 0; step < 3; step += 1) {
     ctx.fillStyle = `rgba(0, 0, 0, ${0.32 - step * 0.1})`
     ctx.fillRect(x + 4, y + BRICK.h + step * 6, w - 8, 6)
   }
+}
+
+function drawPlatform(
+  ctx: CanvasRenderingContext2D,
+  atlas: CanvasImageSource,
+  cathedral: CanvasImageSource,
+  platform: Platform,
+  platformIndex: number,
+  random: () => number,
+) {
+  const { x, y, w } = platform
+  ledgeShadow(ctx, platform)
   for (let index = 0; index < w / BRICK.w; index += 1) {
     drawAtlas(ctx, atlas, blockAt(index + platformIndex), x + index * BRICK.w, y, PX)
   }
@@ -256,13 +283,47 @@ function drawPlatform(
   }
 }
 
-export function buildBackground(atlas: CanvasImageSource, cathedral: CanvasImageSource) {
-  const { element, ctx } = canvas(LW, LH)
-  ctx.scale(1 / PX, 1 / PX)
-  ctx.translate(BLEED.x, BLEED.y)
-  const random = seeded(7)
+/** A blank scene canvas in world coordinates, bleed included. */
+function sceneCanvas() {
+  const layer = canvas(LW, LH)
+  layer.ctx.scale(1 / PX, 1 / PX)
+  layer.ctx.translate(BLEED.x, BLEED.y)
+  return layer
+}
+
+const tile = (rect: Rect) => [rect[2] * PX, rect[3] * PX] as const
+
+/** The bleed fades out in hard steps, so the eye stays on the arena. */
+function fadeBleed(ctx: CanvasRenderingContext2D) {
   const { left, top, right, bottom } = SCENE
-  const tile = (rect: Rect) => [rect[2] * PX, rect[3] * PX] as const
+  for (let step = 1; step <= 5; step += 1) {
+    ctx.fillStyle = 'rgba(5, 3, 7, 0.22)'
+    const inset = step * 64
+    ctx.fillRect(left, top, right - left, BLEED.y + 64 - inset) // above
+    ctx.fillRect(left, H - 64 + inset, right - left, bottom - H + 64 - inset) // below
+    ctx.fillRect(left, top, BLEED.x + 64 - inset, bottom - top) // left
+    ctx.fillRect(W - 64 + inset, top, right - W + 64 - inset, bottom - top) // right
+  }
+}
+
+/** Candelabras on wall sconces or ledges, and the crypt's braziers. */
+function drawCandles(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource, arena: Arena) {
+  const [shelfW] = tile(CATHEDRAL.cornice)
+  for (const candle of arena.candles) {
+    if (candle.brazier) {
+      drawAtlas(ctx, crypt, CRYPT.brazier, candle.x - 16, candle.y - 36, PX)
+      continue
+    }
+    if (candle.shelf) drawAtlas(ctx, cathedral, CATHEDRAL.cornice, candle.x - shelfW / 2, candle.y, PX)
+    drawAtlas(ctx, atlas, ATLAS.candelabra, candle.x - 14, candle.y - 28, PX)
+  }
+}
+
+function buildCathedral(atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource) {
+  const { element, ctx } = sceneCanvas()
+  const random = seeded(7)
+  const { left, right, bottom, top } = SCENE
+  const arena = ARENAS.cathedral
 
   // Stone wall, mostly plain bricks with the odd mossy or cracked one.
   const [wallW, wallH] = tile(CATHEDRAL.wallA)
@@ -349,22 +410,107 @@ export function buildBackground(atlas: CanvasImageSource, cathedral: CanvasImage
     drawAtlas(ctx, atlas, blockAt(index), index * BRICK.w - 10, GROUND_Y, PX)
   }
 
-  PLATFORMS.forEach((_, index) => drawPlatform(ctx, atlas, cathedral, index, random))
-  const [shelfW] = tile(CATHEDRAL.cornice)
-  for (const candle of CANDLES) {
-    if (candle.shelf) drawAtlas(ctx, cathedral, CATHEDRAL.cornice, candle.x - shelfW / 2, candle.y, PX)
-    drawAtlas(ctx, atlas, ATLAS.candelabra, candle.x - 14, candle.y - 28, PX)
+  arena.platforms.forEach((platform, index) => drawPlatform(ctx, atlas, cathedral, platform, index, random))
+  drawCandles(ctx, atlas, cathedral, crypt, arena)
+  fadeBleed(ctx)
+  return element
+}
+
+/**
+ * The crypt beneath the nave: long teal stone blocks, round arches on squat pillars,
+ * skull-filled ossuary niches, hanging chains, braziers, and the Model's Eye carved where
+ * the cathedral has its rose window. The centre ledge is a sarcophagus.
+ */
+function buildCrypt(atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource) {
+  const { element, ctx } = sceneCanvas()
+  const random = seeded(13)
+  const { left, top, right, bottom } = SCENE
+  const arena = ARENAS.crypt
+
+  const [wallW, wallH] = tile(CRYPT.wallA)
+  for (let y = top; y < GROUND_Y; y += wallH) {
+    for (let x = left; x < right; x += wallW) drawAtlas(ctx, crypt, random() < 0.15 ? CRYPT.wallB : CRYPT.wallA, x, y, PX)
+  }
+  ctx.fillStyle = 'rgba(6, 10, 14, 0.5)'
+  ctx.fillRect(left, top, right - left, GROUND_Y - top)
+
+  // Skull niches along the side bays, under the high alcoves.
+  const [ossuaryW] = tile(CRYPT.ossuary)
+  for (const [from, to] of [
+    [56, 368],
+    [912, 1224],
+  ]) {
+    for (let x = from; x + ossuaryW <= to; x += ossuaryW) drawAtlas(ctx, crypt, CRYPT.ossuary, x, 300, PX)
   }
 
-  // The bleed fades out in hard steps, so the eye stays on the arena.
-  for (let step = 1; step <= 5; step += 1) {
-    ctx.fillStyle = 'rgba(5, 3, 7, 0.22)'
-    const inset = step * 64
-    ctx.fillRect(left, top, right - left, BLEED.y + 64 - inset) // above
-    ctx.fillRect(left, H - 64 + inset, right - left, bottom - H + 64 - inset) // below
-    ctx.fillRect(left, top, BLEED.x + 64 - inset, bottom - top) // left
-    ctx.fillRect(W - 64 + inset, top, right - W + 64 - inset, bottom - top) // right
+  // The Model's Eye, glowing a cold teal.
+  const [eyeSize] = tile(CRYPT.eye)
+  halo(ctx, W / 2, 130, 240, '88, 143, 109', 0.4)
+  drawAtlas(ctx, crypt, CRYPT.eye, W / 2 - eyeSize / 2, 130 - eyeSize / 2, PX)
+
+  // Round arches on pillars; the outermost pillars sit in the bleed.
+  const springline = 210
+  const pillars = [-352, 24, 400, 880, 1256, 1632]
+  for (let index = 0; index < pillars.length - 1; index += 1) {
+    const rect = pillars[index] === 400 ? CRYPT.middleArch : CRYPT.sideArch
+    const [archW, archH] = tile(rect)
+    const centre = (pillars[index] + pillars[index + 1]) / 2
+    drawAtlas(ctx, crypt, rect, centre - archW / 2, springline - archH, PX)
   }
+  const [shaftW, shaftH] = tile(CATHEDRAL.shaft)
+  const [capitalW, capitalH] = tile(CATHEDRAL.capital)
+  const [baseW, baseH] = tile(CATHEDRAL.base)
+  for (const x of pillars) {
+    for (let y = top; y < GROUND_Y - baseH; y += shaftH) drawAtlas(ctx, cathedral, CATHEDRAL.shaft, x - shaftW / 2, y, PX)
+    drawAtlas(ctx, cathedral, CATHEDRAL.capital, x - capitalW / 2, springline - capitalH / 2, PX)
+    drawAtlas(ctx, cathedral, CATHEDRAL.base, x - baseW / 2, GROUND_Y - baseH, PX)
+  }
+
+  // Chains hang from the vault, clear of the ledges.
+  const [, chainH] = tile(CRYPT.chain)
+  for (const [x, length] of [
+    [330, 5],
+    [460, 8],
+    [820, 8],
+    [950, 5],
+  ]) {
+    for (let link = 0; link < length; link += 1) drawAtlas(ctx, crypt, CRYPT.chain, x - 4, link * chainH, PX)
+  }
+
+  // Push the set back, with a cold mist along the floor.
+  ctx.fillStyle = 'rgba(4, 7, 9, 0.42)'
+  ctx.fillRect(left, top, right - left, bottom - top)
+  for (let step = 0; step < 4; step += 1) {
+    ctx.fillStyle = `rgba(40, 72, 70, ${0.06 + step * 0.06})`
+    ctx.fillRect(left, 500 + step * 36, right - left, 36)
+  }
+
+  // Bones in the corners under the low shelves.
+  const [bonesW, bonesH] = tile(CRYPT.bones)
+  for (const x of [200, 1080]) drawAtlas(ctx, crypt, CRYPT.bones, x - bonesW / 2, GROUND_Y - bonesH, PX)
+
+  // Floor: one course of crypt slabs.
+  const slabs = [CRYPT.blockA, CRYPT.blockB, CRYPT.blockC, CRYPT.blockB]
+  ctx.fillStyle = '#0a0c10'
+  ctx.fillRect(left, GROUND_Y, right - left, bottom - GROUND_Y)
+  for (let index = Math.floor(left / BRICK.w) - 1; index * BRICK.w < right; index += 1) {
+    drawAtlas(ctx, crypt, slabs[((index % 4) + 4) % 4], index * BRICK.w, GROUND_Y, PX)
+  }
+
+  // Ledges are crypt slabs; the centre one is the lid of a sarcophagus.
+  arena.platforms.forEach((platform, platformIndex) => {
+    const [sarcophagusW] = tile(CRYPT.sarcophagus)
+    if (platform.w === sarcophagusW && platform.y === 500) {
+      drawAtlas(ctx, crypt, CRYPT.sarcophagus, platform.x, platform.y, PX)
+      return
+    }
+    ledgeShadow(ctx, platform)
+    for (let index = 0; index < platform.w / BRICK.w; index += 1) {
+      drawAtlas(ctx, crypt, slabs[(index + platformIndex) % slabs.length], platform.x + index * BRICK.w, platform.y, PX)
+    }
+  })
+  drawCandles(ctx, atlas, cathedral, crypt, arena)
+  fadeBleed(ctx)
   return element
 }
 
@@ -401,12 +547,13 @@ export function loadAssets() {
     loadImage(playerUrl),
     loadImage(enemyUrl),
     loadImage(cathedralUrl),
-  ]).then(([atlas, player, enemy, cathedral]) => {
+    loadImage(cryptUrl),
+  ]).then(([atlas, player, enemy, cathedral, crypt]) => {
     const skull = crop(atlas, ATLAS.skull)
     return {
       atlas,
       cathedral,
-      background: buildBackground(atlas, cathedral),
+      backgrounds: { cathedral: buildCathedral(atlas, cathedral, crypt), crypt: buildCrypt(atlas, cathedral, crypt) },
       vignette: buildVignette('0,0,0', [0.18, 0.32, 0.46, 0.6, 0.72]),
       redVignette: buildVignette('200,0,20', [0.3, 0.5, 0.7, 0.85, 1]),
       player: {
@@ -533,24 +680,28 @@ export function render(
 
   // ---- Ground layer: scenery, light, and everything that sits behind the characters.
   const ground = beginLayer(layers.ground, false)
-  ground.drawImage(assets.background, 0, 0)
+  const arena = g.arena
+  ground.drawImage(assets.backgrounds[arena.id], 0, 0)
   worldSpace(ground)
   ground.globalCompositeOperation = 'lighter'
+  // Light falls from the rose window in the nave (red) or the Model's Eye in the crypt (teal).
   const shaftAlpha = 0.05 + Math.sin(time * 0.7) * 0.012
+  const shaftColor = arena.id === 'crypt' ? '88, 143, 109' : '220, 50, 70'
+  const shaftTop = arena.id === 'crypt' ? 190 : ROSE_Y + 60
   for (let step = 0; step < 3; step += 1) {
     const inset = step * 70
-    ground.fillStyle = `rgba(220, 50, 70, ${shaftAlpha})`
+    ground.fillStyle = `rgba(${shaftColor}, ${shaftAlpha})`
     ground.beginPath()
-    ground.moveTo(600 + step * 10, ROSE_Y + 60)
-    ground.lineTo(680 - step * 10, ROSE_Y + 60)
+    ground.moveTo(600 + step * 10, shaftTop)
+    ground.lineTo(680 - step * 10, shaftTop)
     ground.lineTo(860 - inset, GROUND_Y)
     ground.lineTo(420 + inset, GROUND_Y)
     ground.closePath()
     ground.fill()
   }
-  for (const [index, candle] of CANDLES.entries()) {
+  for (const [index, candle] of arena.candles.entries()) {
     const flicker = 0.26 + Math.sin(time * 9 + index * 1.7) * 0.05 + (Math.sin(time * 23 + index) > 0.6 ? 0.04 : 0)
-    halo(ground, candle.x, candle.y - 26, 62, '255, 150, 70', flicker)
+    halo(ground, candle.x, candle.y - 26, candle.brazier ? 90 : 62, '255, 150, 70', candle.brazier ? flicker + 0.08 : flicker)
   }
   if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
@@ -623,7 +774,7 @@ export function render(
     ground.globalCompositeOperation = 'source-over'
   }
 
-  for (const [index, portal] of PORTALS.entries()) {
+  for (const [index, portal] of arena.portals.entries()) {
     const red = portal.color === 'red'
     ground.globalCompositeOperation = 'lighter'
     halo(ground, portal.x, portal.y - 40, 64, red ? '228, 59, 68' : '192, 203, 220', 0.4 + (Math.floor(time * 4) % 2) * 0.06)
@@ -716,8 +867,17 @@ export function render(
     }
   }
 
-  for (const [index, candle] of CANDLES.entries()) {
+  for (const [index, candle] of arena.candles.entries()) {
     const tall = Math.sin(time * 14 + index * 2.3) > 0
+    if (candle.brazier) {
+      // A tongue of fire over the coals: pixel columns that flicker in height.
+      for (let column = -3; column <= 3; column += 1) {
+        const height = snap(16 - Math.abs(column) * 3 + (Math.floor(time * 12 + column * 2 + index) % 3) * PX * 2)
+        glow.fillStyle = Math.abs(column) < 2 ? '#ead4aa' : column % 2 ? '#e43b44' : '#e4a672'
+        glow.fillRect(candle.x + column * PX * 2 - PX, candle.y - 28 - height, PX * 2, height)
+      }
+      continue
+    }
     for (const dx of [-8, 0, 8]) {
       glow.fillStyle = '#e4a672'
       glow.fillRect(candle.x + dx - PX / 2, candle.y - 34, PX, tall ? 6 : 4)

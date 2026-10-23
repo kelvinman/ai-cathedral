@@ -495,6 +495,211 @@ function writeSheet(file, entries, width, height) {
 
 console.log(JSON.stringify(writeSheet('src/assets/cathedral-sprites.png', pieces, 256, 428)))
 
+// ---------- The crypt: a second arena beneath the cathedral ----------
+// Same palette and outline rules, but cold teal stone, bone and iron instead of stained glass.
+
+// Long crypt blocks (32×16 tile, 32×8 blocks), teal-grey with moss.
+function cryptWall(seed, extra) {
+  const s = new Sprite(32, 16)
+  const random = seeded(seed)
+  for (let y = 0; y < 16; y += 1) {
+    const row = y < 8 ? 0 : 1
+    for (let x = 0; x < 32; x += 1) {
+      const bx = (x + (row ? 16 : 0)) % 32
+      const ly = y % 8
+      let color = C.stone0
+      if (ly === 7 || bx === 31) color = C.ink
+      else if (ly === 0) color = C.moss0
+      else if (random() < 0.06) color = C.moss0
+      else if (random() < 0.04) color = C.ink
+      if (ly === 6 && random() < 0.3) color = C.moss1
+      s.set(x, y, color)
+    }
+  }
+  extra?.(s, random)
+  return s
+}
+const cryptWallA = cryptWall(41)
+const cryptWallB = cryptWall(53, (s) => {
+  for (const [x, y] of [[20, 1], [21, 2], [21, 3], [22, 4], [22, 5], [23, 6], [24, 8], [24, 9], [25, 10]]) s.set(x, y, C.ink)
+})
+
+// An ossuary niche packed with skulls (32×16, tileable sideways).
+const ossuary = new Sprite(32, 16)
+{
+  ossuary.rect(0, 0, 32, 16, C.ink)
+  for (let x = 0; x < 32; x += 1) {
+    ossuary.set(x, 0, C.stone1)
+    ossuary.set(x, 15, C.stone0)
+  }
+  const skull = ['.###.', '#####', '#.#.#', '.###.', '.#.#.']
+  for (const [ox, oy] of [[1, 2], [8, 2], [15, 2], [22, 2], [29, 2], [4, 8], [11, 8], [18, 8], [25, 8]]) {
+    skull.forEach((row, y) =>
+      [...row].forEach((bit, x) => {
+        if (bit === '#') ossuary.set((ox + x) % 32, oy + y, y < 2 ? C.cream : C.stone4)
+      }),
+    )
+  }
+}
+
+// Crypt slabs for ledges and the floor (30×17, the same size as the cathedral bricks).
+function cryptBlock(inlay) {
+  const s = new Sprite(30, 17)
+  for (let y = 0; y < 17; y += 1) {
+    for (let x = 0; x < 30; x += 1) {
+      let color = C.stone1
+      if (y === 0) color = C.stone3
+      else if (y === 1) color = C.stone2
+      else if (y >= 15) color = C.stone0
+      else if (x === 0 || x === 29) color = C.ink
+      else if (x === 1) color = C.stone2
+      if (y === 16) color = C.ink
+      s.set(x, y, color)
+    }
+  }
+  // Chisel marks, and a carved skull or cross in the middle.
+  for (const [x, y] of [[5, 5], [6, 6], [22, 11], [23, 10]]) s.set(x, y, C.stone0)
+  if (inlay === 'skull') {
+    ;['.###.', '#####', '#.#.#', '.###.'].forEach((row, y) =>
+      [...row].forEach((bit, x) => bit === '#' && s.set(13 + x, 6 + y, C.stone4)),
+    )
+  } else if (inlay === 'cross') {
+    s.rect(14, 5, 2, 8, C.stone0)
+    s.rect(11, 7, 8, 2, C.stone0)
+  }
+  return s
+}
+const cryptBlockA = cryptBlock('cross')
+const cryptBlockB = cryptBlock('plain')
+const cryptBlockC = cryptBlock('skull')
+
+// The sarcophagus that forms the crypt's centre ledge (150×70): a carved stone box with
+// an effigy lying on the lid.
+const sarcophagus = new Sprite(150, 70)
+{
+  const s = sarcophagus
+  // Lid.
+  for (let y = 0; y < 12; y += 1) for (let x = 2; x < 148; x += 1) s.set(x, y, y === 0 ? C.stone4 : y < 3 ? C.stone3 : y < 10 ? C.stone2 : C.stone1)
+  // Effigy: a robed figure with folded hands, head to the left.
+  s.rect(14, 0, 10, 4, C.cream)
+  s.rect(15, -1 + 1, 8, 1, C.gold1)
+  s.rect(24, 1, 100, 3, C.stone4)
+  s.rect(60, 0, 8, 2, C.cream)
+  for (let x = 26; x < 122; x += 6) s.set(x, 2, C.stone3)
+  // Box.
+  for (let y = 12; y < 62; y += 1) {
+    for (let x = 6; x < 144; x += 1) {
+      const t = (x - 6) / 138
+      s.set(x, y, t < 0.08 ? C.stone2 : t > 0.92 ? C.stone0 : C.stone1)
+    }
+  }
+  for (let x = 6; x < 144; x += 1) s.set(x, 12, C.ink)
+  // Three carved quatrefoil panels.
+  for (const cx of [38, 75, 112]) {
+    for (let y = 18; y < 56; y += 1) {
+      for (let x = cx - 18; x < cx + 18; x += 1) {
+        const edge = y === 18 || y === 55 || x === cx - 18 || x === cx + 17
+        if (edge) s.set(x, y, C.ink)
+      }
+    }
+    for (let y = 22; y < 52; y += 1) {
+      for (let x = cx - 14; x < cx + 14; x += 1) {
+        const dx = x - cx + 0.5
+        const dy = y - 36.5
+        const lobe = [[0, -7], [0, 7], [-7, 0], [7, 0]].some(([lx, ly]) => Math.hypot(dx - lx, dy - ly) < 7.5)
+        if (lobe) s.set(x, y, Math.hypot(dx, dy) < 3 ? C.blood1 : dy < 0 ? C.stone0 : C.ink)
+      }
+    }
+  }
+  // Plinth.
+  for (let y = 62; y < 70; y += 1) for (let x = 0; x < 150; x += 1) s.set(x, y, y === 62 ? C.stone3 : y < 66 ? C.stone2 : C.stone0)
+  s.outline()
+}
+
+// The Model's Eye: a carved stone seal that stands in for the rose window (72×72).
+const modelEye = new Sprite(72, 72)
+{
+  const c = 35.5
+  for (let y = 0; y < 72; y += 1) {
+    for (let x = 0; x < 72; x += 1) {
+      const dx = x - c
+      const dy = y - c
+      const r = Math.hypot(dx, dy)
+      if (r > 35.6) continue
+      const light = -(dx + dy) / (Math.max(r, 1) * Math.SQRT2)
+      let color = light > 0.4 ? C.stone2 : light > -0.3 ? C.stone1 : C.stone0
+      if (r > 34.6 || Math.abs(r - 28) < 0.7 || Math.abs(r - 19) < 0.7) color = C.ink
+      // Runes around the ring.
+      const angle = Math.atan2(dy, dx)
+      if (r > 29 && r < 34 && Math.abs(Math.sin(angle * 12)) > 0.94) color = C.moss1
+      // The eye: almond lids, a teal iris and a dark pupil.
+      const lid = Math.abs(dy) < 9 * Math.cos(Math.min(Math.PI / 2, (Math.abs(dx) / 16) * (Math.PI / 2)))
+      if (r < 18 && lid) color = C.cream
+      if (r < 18 && lid && Math.abs(Math.abs(dy) - 9 * Math.cos((Math.abs(dx) / 16) * (Math.PI / 2))) < 1) color = C.ink
+      if (Math.hypot(dx, dy) < 6.5) color = Math.hypot(dx + 1.5, dy + 1.5) < 2 ? C.white : C.moss2
+      if (Math.hypot(dx, dy) < 2.6) color = C.ink
+      modelEye.set(x, y, color)
+    }
+  }
+}
+
+// A brazier (16×18): iron bowl of coals on a tripod; the game adds the flames.
+const brazier = new Sprite(16, 18)
+{
+  const s = brazier
+  for (let x = 1; x < 15; x += 1) {
+    s.set(x, 6, C.stone2)
+    s.set(x, 7, C.stone1)
+  }
+  for (let y = 8; y < 11; y += 1) for (let x = 2 + (y - 8); x < 14 - (y - 8); x += 1) s.set(x, y, C.stone0)
+  for (let x = 2; x < 14; x += 1) s.set(x, 5, x % 3 ? C.blood2 : C.gold1)
+  for (let x = 4; x < 12; x += 2) s.set(x, 4, C.blood3)
+  line(s, 7, 11, 7, 17, C.stone1)
+  line(s, 5, 11, 2, 17, C.stone1)
+  line(s, 10, 11, 13, 17, C.stone1)
+  s.outline()
+}
+
+// Chain links (4×8, tileable downwards) and a pile of bones (40×12).
+const chain = new Sprite(4, 8)
+;['.##.', '#..#', '#..#', '.##.', '..#.', '..#.', '.#..', '.#..'].forEach((row, y) =>
+  [...row].forEach((bit, x) => bit === '#' && chain.set(x, y, y < 4 ? C.stone3 : C.stone2)),
+)
+const bones = new Sprite(40, 12)
+{
+  const s = bones
+  for (const [x0, y0, x1, y1] of [[2, 10, 16, 6], [10, 11, 30, 9], [20, 8, 36, 11], [6, 7, 12, 11]]) line(s, x0, y0, x1, y1, C.stone4)
+  ;['.###.', '#####', '#.#.#', '.###.'].forEach((row, y) =>
+    [...row].forEach((bit, x) => {
+      if (bit === '#') {
+        s.set(15 + x, 2 + y, C.cream)
+        s.set(28 + x, 4 + y, C.stone4)
+      }
+    }),
+  )
+  s.outline()
+}
+
+const cryptSideArch = arch(188, 94, 8)
+const cryptMiddleArch = arch(240, 120, 8)
+
+const cryptPieces = {
+  wallA: [cryptWallA, 0, 0],
+  wallB: [cryptWallB, 32, 0],
+  ossuary: [ossuary, 64, 0],
+  blockA: [cryptBlockA, 96, 0],
+  blockB: [cryptBlockB, 126, 0],
+  blockC: [cryptBlockC, 156, 0],
+  brazier: [brazier, 186, 0],
+  chain: [chain, 202, 0],
+  bones: [bones, 206, 0],
+  eye: [modelEye, 0, 18],
+  sarcophagus: [sarcophagus, 72, 18],
+  sideArch: [cryptSideArch, 0, 92],
+  middleArch: [cryptMiddleArch, 0, 190],
+}
+console.log(JSON.stringify(writeSheet('src/assets/crypt-sprites.png', cryptPieces, 256, 314)))
+
 // ---------- UI frames (one PNG each, for CSS border-image 9-slicing) ----------
 // Built from the framed brick block in gothic-sprites.png (x 1, y 102): the same
 // 2px wood border, with its gold corner flourish mirrored into all four corners.

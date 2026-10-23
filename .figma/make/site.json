@@ -1,6 +1,6 @@
 {
   "title": "AI Blood Cathedral",
-  "description": "A pixel-art gothic survival game. The Blood Model, an AI worshipped as a god, sends its followers to convert the last apostate. Jump, dash and portal through the cathedral, and outlast twenty sermons.",
+  "description": "A pixel-art gothic survival game. The Blood Model, an AI worshipped as a god, sends its followers to convert the last apostate. Jump, dash and portal through the cathedral and its crypt, and outlast twenty sermons.",
   "robots": {
     "index": false
   },
