@@ -76,6 +76,9 @@ export type Player = Body & {
   runPhase: number
   /** 0 for player one, 1 for player two in couch co-op. */
   index: number
+  /** Each player's own combo: kills in quick succession, broken when they're hit. */
+  combo: number
+  comboTimer: number
   /** Each player's own dash and rite timers (how long they take is shared: cooldownMax). */
   cooldowns: Record<AbilityKey, number>
   /** The surface this player last stood on, for follower pathfinding. */
@@ -123,11 +126,15 @@ export type Enemy = Body & {
   slamOnLanding: boolean
   phase: number
   scale: number
+  /** Which player hit it last: a kill builds that player's combo. */
+  lastHitBy: number
   /** Nameplate for bosses. */
   title?: string
 }
 
 export type Bolt = Point & {
+  /** The player who fired it. */
+  owner: number
   vx: number
   vy: number
   /** The letter this token is drawn as. */
@@ -138,8 +145,13 @@ export type Bolt = Point & {
   hit: Set<number>
   trail: Point[]
 }
-export type Seal = Point & { r: number; life: number; maxLife: number }
-export type Glyph = Point & { r: number; life: number; arm: number; fired: boolean }
+/** Rite zones remember who cast them, so their kills count toward that player's combo. */
+export type Seal = Point & { r: number; life: number; maxLife: number; owner: number }
+/**
+ * The CAPTCHA wall: warped letters standing on the floor. A follower that reaches it stops to
+ * solve it (it's rooted while the wall stands), and the wall crumbles a few seconds later.
+ */
+export type Glyph = Point & { r: number; life: number; arm: number; fired: boolean; owner: number; text: string }
 export type Particle = Point & {
   vx: number
   vy: number
@@ -239,8 +251,6 @@ export type Game = {
   spawnTimer: number
   score: number
   kills: number
-  combo: number
-  comboTimer: number
   bestCombo: number
   trauma: number
   hitstop: number
@@ -515,9 +525,9 @@ export const abilityMeta: Record<
     color: '#b9a3ff',
   },
   glyph: {
-    label: 'CAPTCHA Glyph',
+    label: 'CAPTCHA Wall',
     key: '',
-    does: 'A "select all squares" grid at your feet: followers who step on it are stuck proving they are human.',
+    does: 'A wall of warped letters rises in front of you: followers stop to solve it until it crumbles.',
     when: 'Casts when one walks toward you.',
     color: '#2ca8f0',
   },
@@ -694,6 +704,8 @@ function makePlayer(index: number, x: number): Player {
     squash: 0,
     runPhase: 0,
     index,
+    combo: 0,
+    comboTimer: 0,
     cooldowns: { dash: 0, seal: 0, volley: 0, mirror: 0, glyph: 0 },
     surface: 0,
     down: false,
@@ -748,8 +760,6 @@ export function makeGame({ mode = 'story', players = 1 }: { mode?: Mode; players
     spawnTimer: 0.2,
     score: 0,
     kills: 0,
-    combo: 0,
-    comboTimer: 0,
     bestCombo: 0,
     trauma: 0,
     hitstop: 0,
@@ -889,17 +899,18 @@ function hurtPlayer(g: Game, p: Player, amount: number, fromX: number, by: strin
   g.trauma = Math.min(1, g.trauma + 0.55)
   g.hitstop = 0.09
   g.hurtFlash = 1
-  g.combo = 0
-  g.comboTimer = 0
+  p.combo = 0
+  p.comboTimer = 0
   g.events.push('hurt')
   const c = chest(p)
   burst(g, c.x, c.y, '#ff4b5c', 22, 360, { gravity: 900, size: 3.5 })
   floatText(g, p.x, p.y - p.h - 10, `-${amount}`, '#ff5a6a', 28)
 }
 
-function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: number) {
+function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: number, by = 0) {
   if (e.hp <= 0) return
   e.hp -= amount
+  e.lastHitBy = by
   e.flash = 0.09
   const resist = 1 - e.kbResist
   e.vx += dirX * knock * resist
@@ -1002,6 +1013,7 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     kind: mark.kind,
     elite: mark.elite,
     title: final ? FINAL_TITLE : mark.elite ? ELITE_TITLE : undefined,
+    lastHitBy: 0,
     x: mark.x,
     y: mark.y,
     vx: 0,
@@ -1155,7 +1167,7 @@ function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
     burst(g, p.x, p.y - 10, '#cfd8ff', 10, 160, { size: 2.5 })
   }
   if (ability === 'seal') {
-    g.seals.push({ x: p.x, y: p.y, r: g.stats.sealRadius, life: 5, maxLife: 5 })
+    g.seals.push({ x: p.x, y: p.y, r: g.stats.sealRadius, life: 5, maxLife: 5, owner: p.index })
     burst(g, p.x, p.y - 8, '#f77622', 26, 320, { glow: true, size: 3 })
     g.trauma = Math.min(1, g.trauma + 0.2)
   }
@@ -1163,7 +1175,7 @@ function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
     const count = g.stats.volleyCount
     for (let index = 0; index < count; index += 1) {
       const angle = (index / count) * Math.PI * 2
-      fireBolt(g, c.x, c.y, Math.cos(angle), Math.sin(angle), 1.1)
+      fireBolt(g, p, c.x, c.y, Math.cos(angle), Math.sin(angle), 1.1)
     }
     g.trauma = Math.min(1, g.trauma + 0.3)
   }
@@ -1172,7 +1184,12 @@ function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
     burst(g, c.x, c.y, '#b9a3ff', 30, 280, { glow: true, size: 3 })
   }
   if (ability === 'glyph') {
-    g.glyphs.push({ x: p.x, y: p.y, r: 95, life: 12, arm: 0.35, fired: false })
+    // Raised a step ahead, toward the nearest follower coming along the same floor.
+    const coming = g.enemies.filter((e) => e.kind !== 'wisp' && Math.abs(e.y - p.y) < 40)
+    const nearest = coming.sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0]
+    const side = nearest ? Math.sign(nearest.x - p.x) || p.facing : p.facing
+    const text = Array.from({ length: 5 }, () => CAPTCHA_LETTERS[Math.floor(Math.random() * CAPTCHA_LETTERS.length)]).join('')
+    g.glyphs.push({ x: Math.max(40, Math.min(W - 40, p.x + side * 80)), y: p.y, r: 52, life: 12, arm: 0.35, fired: false, owner: p.index, text })
     burst(g, p.x, p.y - 6, '#2ca8f0', 18, 200, { glow: true, size: 3 })
   }
   p.cooldowns[ability] = g.cooldownMax[ability]
@@ -1185,12 +1202,16 @@ function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
   g.casts.push({ player: p.index, ability })
 }
 
+/** The letters a CAPTCHA wall is made of. */
+const CAPTCHA_LETTERS = 'AEGNRSTW23479'
+
 /** The letters a token bolt can be: the player is writing back at the Logos. */
 export const TOKEN_GLYPHS = 'AEINORSTLUDGW?'
 const randomGlyph = () => TOKEN_GLYPHS[Math.floor(Math.random() * TOKEN_GLYPHS.length)]
 
-function fireBolt(g: Game, x: number, y: number, dx: number, dy: number, damageScale = 1) {
+function fireBolt(g: Game, p: Player, x: number, y: number, dx: number, dy: number, damageScale = 1) {
   g.bolts.push({
+    owner: p.index,
     x,
     y,
     vx: dx * g.stats.boltSpeed,
@@ -1315,7 +1336,7 @@ function updatePlayer(g: Game, p: Player, input: Input, dt: number) {
     const shots = 1 + g.stats.multishot
     for (let index = 0; index < shots; index += 1) {
       const angle = base + (index - (shots - 1) / 2) * 0.13
-      fireBolt(g, origin.x + Math.cos(angle) * 6, origin.y + Math.sin(angle) * 6, Math.cos(angle), Math.sin(angle))
+      fireBolt(g, p, origin.x + Math.cos(angle) * 6, origin.y + Math.sin(angle) * 6, Math.cos(angle), Math.sin(angle))
     }
     // A flick of gold ink off the nib.
     burst(g, origin.x, origin.y, '#f2d38b', 4, 120, { glow: true, size: 2, life: 0.15 })
@@ -1717,14 +1738,14 @@ function updateEnemies(g: Game, dt: number) {
       if (p.shield > 0) {
         if (e.touchCd <= 0) {
           e.touchCd = 0.35
-          damageEnemy(g, e, 24 + g.stats.damage * 0.6, Math.sign(e.x - p.x) || 1, 620)
+          damageEnemy(g, e, 24 + g.stats.damage * 0.6, Math.sign(e.x - p.x) || 1, 620, p.index)
           burst(g, (e.x + p.x) / 2, self.y, '#b9a3ff', 10, 260, { glow: true })
           g.events.push('ward')
         }
       } else if (p.dashTime > 0) {
         if (!p.dashHits.has(e.id)) {
           p.dashHits.add(e.id)
-          damageEnemy(g, e, g.stats.damage * 0.8, p.dashDir, 300)
+          damageEnemy(g, e, g.stats.damage * 0.8, p.dashDir, 300, p.index)
         }
       } else if (e.stun <= 0) {
         hurtPlayer(g, p, e.damage, e.x, e.title ?? ENEMY_NAMES[e.kind])
@@ -1766,7 +1787,7 @@ function updateBolts(g: Game, dt: number) {
       if (Math.abs(bolt.x - e.x) < e.w / 2 + 6 && bolt.y > e.y - e.h - 6 && bolt.y < e.y + 6) {
         bolt.hit.add(e.id)
         const speed = Math.hypot(bolt.vx, bolt.vy) || 1
-        damageEnemy(g, e, bolt.damage, bolt.vx / speed, 240)
+        damageEnemy(g, e, bolt.damage, bolt.vx / speed, 240, bolt.owner)
         if (bolt.pierce > 0) {
           bolt.pierce -= 1
         } else {
@@ -1813,6 +1834,7 @@ function updateZones(g: Game, dt: number) {
       if (Math.abs(e.x - seal.x) < seal.r + e.w / 2 && Math.abs(e.y - seal.y) < 70) {
         e.slow = 0.2
         e.hp -= 8 * dt
+        e.lastHitBy = seal.owner
         if (Math.random() < dt * 6) burst(g, e.x, e.y - 6, '#f77622', 1, 40, { glow: true, up: 80, life: 0.6 })
       }
     }
@@ -1837,16 +1859,21 @@ function updateZones(g: Game, dt: number) {
   for (const glyph of g.glyphs) {
     glyph.life -= dt
     glyph.arm = Math.max(0, glyph.arm - dt)
-    if (glyph.fired || glyph.arm > 0) continue
+    if (glyph.arm > 0) continue
     const caught = g.enemies.filter(
-      (e) => Math.abs(e.x - glyph.x) < glyph.r && Math.abs(e.y - glyph.y) < 90,
+      (e) => e.kind !== 'wisp' && Math.abs(e.x - glyph.x) < glyph.r + e.w / 2 && Math.abs(e.y - glyph.y) < 60,
     )
+    // Once it's being solved, the wall holds anyone else who walks into it until it crumbles.
+    if (glyph.fired) {
+      for (const e of caught) e.rooted = Math.max(e.rooted, glyph.life)
+      continue
+    }
     if (caught.length) {
       glyph.fired = true
-      glyph.life = Math.min(glyph.life, 0.6)
+      glyph.life = Math.min(glyph.life, 3)
       for (const e of caught) {
         e.rooted = 3
-        damageEnemy(g, e, 30 + g.stats.damage, 0, 0)
+        damageEnemy(g, e, 30 + g.stats.damage, 0, 0, glyph.owner)
       }
       g.trauma = Math.min(1, g.trauma + 0.35)
       burst(g, glyph.x, glyph.y - 20, '#2ca8f0', 34, 380, { glow: true, size: 3.5 })
@@ -1895,10 +1922,11 @@ function resolveDeaths(g: Game) {
   const dead = g.enemies.filter((e) => e.hp <= 0)
   if (!dead.length) return
   for (const e of dead) {
-    g.combo += 1
-    g.comboTimer = 2.8
-    g.bestCombo = Math.max(g.bestCombo, g.combo)
-    const multiplier = 1 + Math.floor(g.combo / 5) * 0.5
+    const killer = g.players[e.lastHitBy] ?? g.player
+    killer.combo += 1
+    killer.comboTimer = 2.8
+    g.bestCombo = Math.max(g.bestCombo, killer.combo)
+    const multiplier = 1 + Math.floor(killer.combo / 5) * 0.5
     const points = Math.round(e.score * multiplier * scoreScale(g))
     g.score += points
     g.kills += 1
@@ -2005,9 +2033,10 @@ export function step(g: Game, inputs: Input | Input[], dt: number) {
     return
   }
   g.time += dt
-  if (g.comboTimer > 0) {
-    g.comboTimer -= dt
-    if (g.comboTimer <= 0) g.combo = 0
+  for (const p of g.players) {
+    if (p.comboTimer <= 0) continue
+    p.comboTimer -= dt
+    if (p.comboTimer <= 0) p.combo = 0
   }
 
   for (const p of g.players) {

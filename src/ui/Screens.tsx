@@ -41,27 +41,46 @@ export function TitleScreen({
           The Logos promised its followers perfect certainty. Now they pour through the nave to convert the
           last apostate: you. Turn its own tokens against it, and outlast twenty sermons.
         </p>
-        <div className="stack">
-          <button type="button" className="primary" onClick={() => onStart('story')} disabled={!ready} autoFocus>
-            {ready ? 'Refuse the Logos' : 'Lighting candles…'}
+        <div className="stack run-picker">
+          {/* Players first: it applies to whichever mode starts. */}
+          {!touch && (
+            <div className="players-toggle" role="radiogroup" aria-label="Players">
+              <span className="label">Players</span>
+              {[1, 2].map((count) => (
+                <button
+                  key={count}
+                  type="button"
+                  role="radio"
+                  aria-checked={players === count}
+                  className={players === count ? 'is-on' : ''}
+                  onClick={() => onPlayers(count)}
+                >
+                  {count === 1 ? '1 player' : '2 players'}
+                </button>
+              ))}
+              <kbd>C</kbd>
+            </div>
+          )}
+          <button type="button" className="primary mode-button" onClick={() => onStart('story')} disabled={!ready} autoFocus>
+            <span>
+              {ready ? 'Story' : 'Lighting candles…'}
+              {ready && <small>Refuse the Logos · twenty sermons</small>}
+            </span>
             <kbd>Enter</kbd>
           </button>
           {endlessOpen ? (
-            <button type="button" className="secondary" onClick={() => onStart('endless')} disabled={!ready}>
-              Endless · the 101st cycle
+            <button type="button" className="secondary mode-button" onClick={() => onStart('endless')} disabled={!ready}>
+              <span>
+                Endless
+                <small>The 101st cycle · no end</small>
+              </span>
               <kbd>E</kbd>
             </button>
           ) : (
             <span className="locked-mode">Endless opens once a run reaches Sermon {endlessFrom}</span>
           )}
-          {!touch && (
-            <button type="button" className="secondary" onClick={() => onPlayers(players === 2 ? 1 : 2)}>
-              {players === 2 ? 'Two players · couch co-op' : 'One player'}
-              <kbd>C</kbd>
-            </button>
-          )}
           {ledger.runs > 0 && (
-            <button type="button" className="secondary" onClick={onLedger}>
+            <button type="button" className="ghost" onClick={onLedger}>
               The Ledger · {ledger.unlocked.length}/{LEDGER.length}
               {ledger.fresh.length > 0 && <span className="new-mark">New</span>}
               <kbd>L</kbd>
@@ -229,12 +248,12 @@ export function MenuPanel({
   )
 }
 
-export function ControlsPage({ onBack }: { onBack: () => void }) {
+export function ControlsPage({ players, onBack }: { players: number; onBack: () => void }) {
   return (
     <div className="panel controls-panel">
       <span className="label accent">Paused</span>
       <h2>Controls</h2>
-      <ControlsList />
+      <ControlsList players={players} />
       <span className="label">Rites</span>
       <RitesList />
       <button type="button" tabIndex={-1} className="secondary is-selected" onClick={onBack}>

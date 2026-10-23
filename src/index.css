@@ -224,11 +224,15 @@
   padding-top: 10px;
 }
 
-/* Player two's corner (co-op): under the score, right-aligned. */
+/* Player two's corner (co-op): player one's, mirrored into the top right. */
 .corner.is-right {
-  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
   left: auto;
   right: max(14px, env(safe-area-inset-right));
+  flex-direction: row-reverse;
+}
+
+.corner.is-right .abilities {
+  flex-direction: row-reverse;
 }
 
 .corner.is-right .corner-stack {
@@ -325,12 +329,10 @@
   transition: transform 180ms steps(4);
 }
 
+/* The team's free will, under the sermon's progress bar. */
 .score {
-  position: absolute;
-  top: max(10px, env(safe-area-inset-top));
-  right: max(16px, env(safe-area-inset-right));
   font-family: var(--pixel);
-  font-size: 44px;
+  font-size: 34px;
   font-weight: 400;
   line-height: 1;
   color: var(--gold1);
@@ -882,6 +884,59 @@
   margin: 0 1px;
 }
 
+/* Title: the players toggle (applies to both modes), then one button per mode. */
+.players-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--stone0);
+  box-shadow: var(--inset);
+}
+
+.players-toggle .label {
+  padding: 0 6px;
+}
+
+.players-toggle button {
+  min-height: 34px;
+  padding: 0 6px;
+  font-family: var(--label);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--stone3);
+}
+
+.players-toggle button.is-on {
+  background: var(--stone1);
+  color: var(--cream);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--gold1);
+}
+
+.mode-button {
+  justify-content: space-between;
+  text-align: left;
+}
+
+.mode-button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.mode-button small {
+  font-family: var(--pixel);
+  font-size: 17px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--stone4);
+}
+
+.primary.mode-button small {
+  color: var(--cream);
+  opacity: 0.85;
+}
+
 /* The endless button's stand-in until it's unlocked. */
 .locked-mode {
   display: grid;
@@ -1126,7 +1181,7 @@
    the scene without hiding it. */
 .spoken {
   position: absolute;
-  top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+  top: calc(max(14px, env(safe-area-inset-top)) + 84px);
   left: 50%;
   translate: -50% 0;
   display: grid;
@@ -1325,12 +1380,14 @@
     height: 24px;
   }
 
-  .sermon-title {
+  /* No room for the sermon's name: just the free will at top centre. */
+  .sermon-title span,
+  .sermon-progress {
     display: none;
   }
 
   .score {
-    font-size: 32px;
+    font-size: 28px;
   }
 
   .ability {
@@ -1460,6 +1517,19 @@
     grid-template-columns: minmax(0, 15fr) minmax(0, 22fr);
     grid-template-rows: none;
     height: calc(100vh - 150px);
+  }
+
+  /* The free will goes back to the top-right corner, leaving the top strip for lines. */
+  .sermon-title {
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    translate: none;
+    justify-items: end;
+  }
+
+  .sermon-title span,
+  .sermon-progress {
+    display: none;
   }
 
   /* Phones held sideways: below the corner are the ledges, so the line sits in the top

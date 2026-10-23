@@ -1216,27 +1216,30 @@ export function render(
   for (const glyph of g.glyphs) {
     const armed = glyph.arm <= 0
     ground.globalAlpha = Math.min(1, glyph.life / 0.4) * (armed ? 1 : 0.5)
-    // CAPTCHA: the "select all squares" grid laid flat on the floor. Squares tick on as it
-    // arms; when a follower steps on it, every square lights at once.
-    const cellW = snap((glyph.r * 2) / 3)
-    const cellH = snap(cellW * 0.22)
-    const left = snap(glyph.x - cellW * 1.5)
-    const top = snap(glyph.y - cellH * 1.5)
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        const index = row * 3 + column
-        const selected = glyph.fired || (armed && hash(index + Math.floor(time * 2) * 9) < 0.4)
-        ground.fillStyle = selected ? 'rgba(138, 209, 245, 0.75)' : 'rgba(44, 168, 240, 0.22)'
-        ground.fillRect(left + column * cellW + PX, top + row * cellH + PX, cellW - PX * 2, cellH - PX)
-      }
-    }
-    ground.fillStyle = glyph.fired ? '#ffffff' : '#2ca8f0'
-    for (let line = 0; line <= 3; line += 1) {
-      ground.fillRect(left + line * cellW - PX, top, PX, cellH * 3)
-      ground.fillRect(left, top + line * cellH - PX, cellW * 3, PX)
+    // CAPTCHA wall: warped letters rising out of the floor, each wobbling on its own, with
+    // a wavy strike through them. Being solved, they flash; then they fall apart.
+    const rise = armed ? 1 : 1 - glyph.arm / 0.35
+    const crumble = glyph.fired ? Math.max(0, 1 - glyph.life / 0.6) : 0
+    const size = PX * 3
+    const spacing = size * 3 + PX * 2
+    const width = spacing * glyph.text.length
+    ground.fillStyle = `rgba(234, 212, 170, ${0.16 * rise * (1 - crumble)})`
+    ground.fillRect(snap(glyph.x - width / 2 - PX * 2), snap(glyph.y - 62 * rise), snap(width + PX * 4), snap(62 * rise))
+    ;[...glyph.text].forEach((letter, index) => {
+      const wobble = Math.sin(time * 4 + index * 1.7) * 3
+      const fall = crumble * (20 + index * 9)
+      const x = glyph.x - width / 2 + spacing * (index + 0.5) + Math.sin(time * 3 + index) * 1.5
+      const y = glyph.y - 30 * rise + wobble + fall
+      const solving = glyph.fired && Math.floor(time * 10 + index) % 2 === 0
+      const color = solving ? '#8ad1f5' : index % 2 ? '#e4a672' : '#ead4aa'
+      drawGlyph(ground, letter, x, y, size, color)
+    })
+    ground.fillStyle = glyph.fired ? '#ffffff' : '#5a6988'
+    for (let x = -width / 2; x < width / 2; x += PX) {
+      ground.fillRect(snap(glyph.x + x), snap(glyph.y - 32 * rise + Math.sin(x * 0.12 + time * 5) * 5 + crumble * 30), PX, PX * 2)
     }
     ground.globalCompositeOperation = 'lighter'
-    halo(ground, glyph.x, glyph.y - 4, 40, '44, 168, 240', armed ? 0.45 : 0.2)
+    halo(ground, glyph.x, glyph.y - 20, 44, '234, 212, 170', armed ? 0.3 : 0.15)
     ground.globalCompositeOperation = 'source-over'
   }
   ground.globalAlpha = 1

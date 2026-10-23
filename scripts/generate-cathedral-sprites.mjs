@@ -1306,19 +1306,20 @@ const riteIcons = {
     line(s, 5, 8, 9, 4, C.stone4)
     return s.outline()
   })(),
-  // CAPTCHA Glyph: the "select all squares" grid, some squares picked.
+  // CAPTCHA Wall: warped letters on a pale panel, struck through with a wavy line.
   glyph: (() => {
     const s = new Sprite(16, 16)
-    s.rect(1, 1, 14, 14, '#0f4f8a')
-    for (let row = 0; row < 3; row += 1) {
-      for (let column = 0; column < 3; column += 1) {
-        const picked = [0, 4, 5, 7].includes(row * 3 + column)
-        s.rect(2 + column * 4, 2 + row * 4, 4, 4, picked ? '#8ad1f5' : '#2ca8f0')
-        s.rect(2 + column * 4, 2 + row * 4, 4, 1, picked ? C.white : '#5fc4f5')
-        s.rect(5 + column * 4, 2 + row * 4, 1, 4, '#0f4f8a')
-        s.rect(2 + column * 4, 5 + row * 4, 4, 1, '#0f4f8a')
-      }
-    }
+    s.rect(1, 2, 14, 12, C.cream)
+    s.rect(1, 12, 14, 2, C.gold1)
+    const letters = [
+      [1, ['##.', '#.#', '##.', '#.#', '#.#']],
+      [6, ['###', '..#', '.#.', '.#.', '.#.']],
+      [11, ['#.#', '#.#', '#.#', '###', '#.#']],
+    ]
+    letters.forEach(([x0, rows], index) =>
+      rows.forEach((row, y) => [...row].forEach((bit, x) => bit === '#' && s.set(x0 + x, 4 + y + (index === 1 ? 1 : 0), index % 2 ? C.wood1 : C.stone1))),
+    )
+    for (let x = 1; x < 15; x += 1) s.set(x, 7 + Math.round(Math.sin(x * 0.9) * 1.2), C.blood2)
     return s.outline()
   })(),
 }

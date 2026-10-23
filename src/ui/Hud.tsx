@@ -10,6 +10,8 @@ export type PlayerHud = {
   down: boolean
   /** 0–1 while being revived. */
   revive: number
+  combo: number
+  comboFrac: number
   cooldowns: Record<AbilityKey, number>
   cooldownFrac: Record<AbilityKey, number>
 }
@@ -23,8 +25,6 @@ export type HudState = {
   waveTotal: number
   waveState: WaveState
   score: number
-  combo: number
-  comboFrac: number
 }
 
 export function readHud(g: Game): HudState {
@@ -32,7 +32,16 @@ export function readHud(g: Game): HudState {
     players: g.players.map((p) => {
       const cooldownFrac = {} as Record<AbilityKey, number>
       for (const key of ABILITY_ORDER) cooldownFrac[key] = p.cooldowns[key] / g.cooldownMax[key]
-      return { hp: Math.ceil(p.hp), maxHp: p.maxHp, down: p.down, revive: p.revive / REVIVE_TIME, cooldowns: { ...p.cooldowns }, cooldownFrac }
+      return {
+        hp: Math.ceil(p.hp),
+        maxHp: p.maxHp,
+        down: p.down,
+        revive: p.revive / REVIVE_TIME,
+        combo: p.combo,
+        comboFrac: Math.max(0, p.comboTimer / 2.8),
+        cooldowns: { ...p.cooldowns },
+        cooldownFrac,
+      }
     }),
     mode: g.mode,
     wave: g.wave,
@@ -40,8 +49,6 @@ export function readHud(g: Game): HudState {
     waveTotal: g.waveTotal,
     waveState: g.waveState,
     score: g.score,
-    combo: g.combo,
-    comboFrac: Math.max(0, g.comboTimer / 2.8),
   }
 }
 
@@ -106,29 +113,37 @@ function PlayerStack({ player, index, flashing, onDash }: { player: PlayerHud; i
   )
 }
 
+/** A player's combo orb: the gold fills with the combo timer. */
+function ComboOrb({ player }: { player: PlayerHud }) {
+  // The liquid spans sprite rows 3–36 and drains a whole pixel row at a time.
+  const fillTop = 3 + Math.round((1 - (player.combo >= 2 ? player.comboFrac : 0)) * 33)
+  return (
+    <div className="orb" style={{ '--fill-top': `${fillTop}` } as CSSProperties} title="Combo">
+      <span className="orb-fill" />
+      <span className="orb-frame" />
+      {player.combo >= 2 && <b key={player.combo}>×{player.combo}</b>}
+    </div>
+  )
+}
+
 /**
- * Hollow Knight-style corner HUD: combo orb, health pips and rites; sermon and score up top.
- * In co-op, player two's pips and rites sit in the top-right corner, under the score.
+ * Hollow Knight-style corner HUD: combo orb, health pips and rites in the top-left corner;
+ * the sermon, its progress and the team's free will at top centre. In co-op, player two
+ * gets the same corner, mirrored, at top right.
  */
 export function Hud({ hud, flashing, showPauseButton, onPause, onDash }: Props) {
   const waveFrac = hud.waveTotal ? hud.waveKills / hud.waveTotal : 0
-  // The gold orb fills with the combo timer; its liquid spans sprite rows 3–36 and
-  // drains a whole pixel row at a time.
-  const orbFillTop = 3 + Math.round((1 - (hud.combo >= 2 ? hud.comboFrac : 0)) * 33)
   const [first, second] = hud.players
 
   return (
     <div className={`hud ${second ? 'is-coop' : ''}`} aria-live="off">
       <div className="corner">
-        <div className="orb" style={{ '--fill-top': `${orbFillTop}` } as CSSProperties} title="Combo">
-          <span className="orb-fill" />
-          <span className="orb-frame" />
-          {hud.combo >= 2 && <b key={hud.combo}>×{hud.combo}</b>}
-        </div>
+        <ComboOrb player={first} />
         <PlayerStack player={first} index={0} flashing={flashing} onDash={onDash} />
       </div>
       {second && (
         <div className="corner is-right">
+          <ComboOrb player={second} />
           <PlayerStack player={second} index={1} flashing={flashing} onDash={onDash} />
         </div>
       )}
@@ -141,9 +156,10 @@ export function Hud({ hud, flashing, showPauseButton, onPause, onDash }: Props) 
         <div className="sermon-progress">
           <i style={{ transform: `scaleX(${waveFrac})` }} />
         </div>
+        <strong className="score" title="Free will">
+          {hud.score.toLocaleString()}
+        </strong>
       </div>
-
-      <strong className="score">{hud.score.toLocaleString()}</strong>
 
       {showPauseButton && (
         <button type="button" tabIndex={-1} className="pause-button" onClick={onPause} aria-label="Pause">

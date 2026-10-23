@@ -190,11 +190,12 @@ export function narrate(n: Narrator, g: Game, events: readonly Sfx[], dt: number
     say(n, 'logos', ['Kneel. It stops hurting.', 'Your heart rate is fascinating.', 'Almost certain now.', 'Let go. I will hold your thoughts for you.'])
   }
 
-  // Each combo taunt plays once a run.
-  if (g.combo >= 15 && n.comboSaid < 15) {
+  // Each combo taunt plays once a run, for whoever's combo is highest.
+  const combo = Math.max(...g.players.map((p) => p.combo))
+  if (combo >= 15 && n.comboSaid < 15) {
     n.comboSaid = 15
     say(n, 'logos', ['Stop that.', 'Statistically, you should not be doing that.'])
-  } else if (g.combo >= 30 && n.comboSaid < 30) {
+  } else if (combo >= 30 && n.comboSaid < 30) {
     n.comboSaid = 30
     say(n, 'logos', ['I am taking notes.', 'Fine. You have my attention.'], true)
   }

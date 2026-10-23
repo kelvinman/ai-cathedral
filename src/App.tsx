@@ -714,7 +714,7 @@ export default function App() {
 
         {phase === 'paused' && (
           <div className="overlay">
-            {pauseView === 'controls' && <ControlsPage onBack={() => showPauseView('menu')} />}
+            {pauseView === 'controls' && <ControlsPage players={hud.players.length} onBack={() => showPauseView('menu')} />}
             {pauseView === 'menu' && (
               <MenuPanel
                 kicker={`Sermon ${pad(hud.wave)}`}
