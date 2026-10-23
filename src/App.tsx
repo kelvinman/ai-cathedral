@@ -18,10 +18,13 @@ import {
   type Phase,
   type Upgrade,
 } from './game/engine'
+import { LEDGER, emptyLedger, recordRun, type LedgerEntry, type LedgerState } from './game/lore'
+import { epitaph, makeNarrator, narrate, type Line } from './game/narrator'
 import { loadAssets, render, setShakeEnabled, type Assets, type View } from './game/render'
-import { Hud, readHud, type HudState } from './ui/Hud'
+import { Hud, SpokenLine, readHud, type HudState } from './ui/Hud'
 import {
   ControlsPage,
+  LedgerScreen,
   MenuPanel,
   ResultsScreen,
   SermonBanner,
@@ -62,6 +65,14 @@ function loadSettings(): Settings {
   }
 }
 
+function loadLedger(): LedgerState {
+  try {
+    return { ...emptyLedger(), ...(JSON.parse(readStorage('abc-ledger') ?? '{}') as Partial<LedgerState>) }
+  } catch {
+    return emptyLedger()
+  }
+}
+
 const clampStep = (value: number, delta: number) => Math.round(Math.max(0, Math.min(1, value + delta)) * 10) / 10
 const percent = (value: number) => (value <= 0 ? 'off' : `${Math.round(value * 100)}%`)
 
@@ -92,6 +103,42 @@ export default function App() {
   const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '' })
   const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
   const [settings, setSettings] = useState<Settings>(loadSettings)
+
+  // Story: the line being spoken, and the Ledger of lore pages kept between runs.
+  const [ledger, setLedger] = useState<LedgerState>(loadLedger)
+  const ledgerRef = useRef(ledger)
+  const narratorRef = useRef(makeNarrator(ledger))
+  const [line, setLine] = useState<Line | null>(null)
+  const [lastWord, setLastWord] = useState('')
+  const [earned, setEarned] = useState<LedgerEntry[]>([])
+  const saveLedger = useCallback((next: LedgerState) => {
+    ledgerRef.current = next
+    setLedger(next)
+    writeStorage('abc-ledger', JSON.stringify(next))
+  }, [])
+
+  // The Ledger opens over the title screen; ↑ ↓ turn its pages.
+  const [ledgerOpen, setLedgerOpen] = useState(false)
+  const ledgerOpenRef = useRef(false)
+  const [page, setPage] = useState(0)
+  const pageRef = useRef(0)
+  const turnTo = useCallback((index: number) => {
+    pageRef.current = index
+    setPage(index)
+  }, [])
+  const openLedger = useCallback(() => {
+    ledgerOpenRef.current = true
+    setLedgerOpen(true)
+    // Open on the newest page, if there is one.
+    const fresh = ledgerRef.current.fresh[0]
+    turnTo(Math.max(0, LEDGER.findIndex((entry) => entry.id === fresh)))
+  }, [turnTo])
+  const closeLedger = useCallback(() => {
+    ledgerOpenRef.current = false
+    setLedgerOpen(false)
+    // Pages count as read once the Ledger has been opened and closed.
+    if (ledgerRef.current.fresh.length) saveLedger({ ...ledgerRef.current, fresh: [] })
+  }, [saveLedger])
 
   // Highlighted upgrade card. The ref mirrors it for the key handler; confirming is
   // ignored briefly after the screen opens so a jump press can't pick a card by accident.
@@ -160,6 +207,8 @@ export default function App() {
     game.phase = 'playing'
     startWave(game)
     gameRef.current = game
+    narratorRef.current = makeNarrator(ledgerRef.current)
+    setLine(null)
     inputRef.current.pressed.clear()
     setLevels({})
     setNewBest(false)
@@ -203,6 +252,23 @@ export default function App() {
       unlockAudio()
       if (GAME_KEYS.has(event.code) && game.phase === 'playing') event.preventDefault()
       if (game.phase === 'upgrade' && ['Space', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
+
+      if (game.phase === 'title' && ledgerOpenRef.current) {
+        if (['Escape', 'Enter', 'Space', 'Backspace', 'KeyL'].includes(event.code)) {
+          event.preventDefault()
+          closeLedger()
+        }
+        const step = ['ArrowUp', 'KeyW'].includes(event.code) ? -1 : ['ArrowDown', 'KeyS'].includes(event.code) ? 1 : 0
+        if (step) {
+          event.preventDefault()
+          turnTo((pageRef.current + step + LEDGER.length) % LEDGER.length)
+        }
+        return
+      }
+      if (game.phase === 'title' && event.code === 'KeyL' && ledgerRef.current.runs > 0) {
+        openLedger()
+        return
+      }
 
       if (game.phase === 'paused') {
         const view = pauseViewRef.current
@@ -280,7 +346,7 @@ export default function App() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [dismissControlsCard, goTo, pick, press, select, selectPause, showPauseView, startGame, togglePause])
+  }, [closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
 
   useEffect(() => {
     if (phase === 'paused') showPauseView('menu')
@@ -367,6 +433,10 @@ export default function App() {
           steps += 1
           if (game.phase !== 'playing') break
         }
+        const narrator = narratorRef.current
+        const shown = narrator.line
+        narrate(narrator, game, game.events, dt)
+        if (narrator.line !== shown) setLine(narrator.line && { ...narrator.line })
       } else {
         accumulator = 0
         input.pressed.clear()
@@ -401,12 +471,20 @@ export default function App() {
         phaseRef.current = game.phase
         setPhase(game.phase)
         if (game.phase === 'upgrade') {
+          // A line cut off by the upgrade screen shouldn't resume after it.
+          narratorRef.current.line = null
+          setLine(null)
           setOffers(game.offers)
           select(Math.floor(game.offers.length / 2))
           offersOpenedAtRef.current = performance.now()
         }
         if (game.phase === 'dead' || game.phase === 'won') {
           setSummary({ wave: game.wave, kills: game.kills, bestCombo: game.bestCombo, score: game.score, by: game.lastHurtBy })
+          const run = { wave: game.wave, won: game.phase === 'won', by: game.lastHurtBy }
+          setLastWord(epitaph(run, ledgerRef.current))
+          const result = recordRun(ledgerRef.current, run)
+          saveLedger(result.state)
+          setEarned(result.earned)
           const previous = Number(readStorage('abc-best') ?? 0)
           if (game.score > previous) {
             writeStorage('abc-best', String(game.score))
@@ -431,7 +509,7 @@ export default function App() {
       cancelAnimationFrame(raf)
       observer.disconnect()
     }
-  }, [select])
+  }, [saveLedger, select])
 
   const holdTouch = (key: keyof typeof touchRef.current, action?: Action) => ({
     onPointerDown: (event: ReactPointerEvent) => {
@@ -516,6 +594,9 @@ export default function App() {
 
         {playing && riteTip && <RiteTip rite={riteTip} />}
 
+        {/* After the controls card, so CSS can move the line clear of it. */}
+        {(playing || phase === 'paused') && line && <SpokenLine key={line.id} line={line} paused={!playing} />}
+
         {touch && playing && <p className="rotate-hint">Turn your phone sideways for a bigger arena</p>}
         {touch && playing && (
           <div className="touch-controls">
@@ -550,7 +631,10 @@ export default function App() {
           </div>
         )}
 
-        {phase === 'title' && <TitleScreen ready={ready} best={best} onStart={startGame} />}
+        {phase === 'title' && !ledgerOpen && (
+          <TitleScreen ready={ready} best={best} ledger={ledger} onStart={startGame} onLedger={openLedger} />
+        )}
+        {phase === 'title' && ledgerOpen && <LedgerScreen ledger={ledger} index={page} onSelect={turnTo} onBack={closeLedger} />}
 
         {phase === 'paused' && (
           <div className="overlay">
@@ -588,6 +672,8 @@ export default function App() {
             summary={summary}
             best={best}
             newBest={newBest}
+            epitaph={lastWord}
+            earned={earned}
             onRestart={startGame}
             onTitle={() => goTo('title')}
           />

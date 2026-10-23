@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { MAX_WAVE, abilityMeta, type AbilityKey, type Game, type WaveState } from '../game/engine'
+import { SPEAKER_NAMES, type Line } from '../game/narrator'
 import { ABILITY_ORDER, RiteIcon, pad } from './shared'
 
 /** A snapshot of the game for the HUD, refreshed ~15 times a second. */
@@ -117,5 +118,19 @@ export function Hud({ hud, flashing, showPauseButton, onPause, onDash }: Props) 
         </button>
       )}
     </div>
+  )
+}
+
+/** A line spoken during play: who says it, and the line. Fades on its own. */
+export function SpokenLine({ line, paused }: { line: Line; paused: boolean }) {
+  return (
+    <p
+      className={`spoken spoken-${line.speaker} ${paused ? 'is-paused' : ''}`}
+      style={{ '--life': `${line.maxLife}s` } as CSSProperties}
+      role="status"
+    >
+      <span>{SPEAKER_NAMES[line.speaker]}</span>
+      {line.text}
+    </p>
   )
 }

@@ -1,7 +1,21 @@
+import { useEffect, useRef } from 'react'
 import { CURSE_RULES, ENEMY_NAMES, type Curse, type Upgrade, type WaveState } from '../game/engine'
+import { LEDGER, type LedgerEntry, type LedgerState } from '../game/lore'
 import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
-export function TitleScreen({ ready, best, onStart }: { ready: boolean; best: number; onStart: () => void }) {
+export function TitleScreen({
+  ready,
+  best,
+  ledger,
+  onStart,
+  onLedger,
+}: {
+  ready: boolean
+  best: number
+  ledger: LedgerState
+  onStart: () => void
+  onLedger: () => void
+}) {
   return (
     <div className="overlay">
       <div className="panel title-panel">
@@ -14,11 +28,81 @@ export function TitleScreen({ ready, best, onStart }: { ready: boolean; best: nu
           The Logos promised its followers perfect certainty. Now they pour through the nave to convert the
           last apostate: you. Turn its own tokens against it, and outlast twenty sermons.
         </p>
-        <button type="button" className="primary" onClick={onStart} disabled={!ready} autoFocus>
-          {ready ? 'Refuse the Logos' : 'Lighting candles…'}
-          <kbd>Enter</kbd>
-        </button>
+        <div className="stack">
+          <button type="button" className="primary" onClick={onStart} disabled={!ready} autoFocus>
+            {ready ? 'Refuse the Logos' : 'Lighting candles…'}
+            <kbd>Enter</kbd>
+          </button>
+          {ledger.runs > 0 && (
+            <button type="button" className="secondary" onClick={onLedger}>
+              The Ledger · {ledger.unlocked.length}/{LEDGER.length}
+              {ledger.fresh.length > 0 && <span className="new-mark">New</span>}
+              <kbd>L</kbd>
+            </button>
+          )}
+        </div>
         {best > 0 && <span className="label subtle">Best free will · {best.toLocaleString()}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** The lore pages: a list on the left (↑ ↓), the open page on the right. */
+export function LedgerScreen({
+  ledger,
+  index,
+  onSelect,
+  onBack,
+}: {
+  ledger: LedgerState
+  index: number
+  onSelect: (index: number) => void
+  onBack: () => void
+}) {
+  const listRef = useRef<HTMLOListElement>(null)
+  useEffect(() => {
+    listRef.current?.children[index]?.scrollIntoView({ block: 'nearest' })
+  }, [index])
+  const entry = LEDGER[index]
+  const open = ledger.unlocked.includes(entry.id)
+  return (
+    <div className="overlay">
+      <div className="panel ledger-panel">
+        <span className="label accent">Kept by the Logos</span>
+        <h2>The Ledger</h2>
+        <div className="ledger">
+          <ol className="ledger-list" ref={listRef}>
+            {LEDGER.map((item, itemIndex) => {
+              const unlocked = ledger.unlocked.includes(item.id)
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className={`${itemIndex === index ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}`}
+                    onPointerEnter={() => onSelect(itemIndex)}
+                    onClick={() => onSelect(itemIndex)}
+                  >
+                    {unlocked ? item.title : '? ? ?'}
+                    {ledger.fresh.includes(item.id) && <span className="new-mark">New</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+          <article className="ledger-page" key={entry.id}>
+            <span className="label">{open ? entry.kicker : 'Locked'}</span>
+            <strong>{open ? entry.title : '? ? ?'}</strong>
+            <p className={open ? '' : 'is-hint'}>{open ? entry.text : entry.hint}</p>
+          </article>
+        </div>
+        <button type="button" tabIndex={-1} className="ghost" onClick={onBack}>
+          Back <kbd>Esc</kbd>
+        </button>
+        <p className="choose-hint">
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> turn the page · <kbd>Esc</kbd> back
+        </p>
       </div>
     </div>
   )
@@ -181,6 +265,8 @@ export function ResultsScreen({
   summary,
   best,
   newBest,
+  epitaph,
+  earned,
   onRestart,
   onTitle,
 }: {
@@ -188,6 +274,10 @@ export function ResultsScreen({
   summary: RunSummary
   best: number
   newBest: boolean
+  /** The Logos's last word on the run. */
+  epitaph: string
+  /** Ledger pages this run unlocked. */
+  earned: LedgerEntry[]
   onRestart: () => void
   onTitle: () => void
 }) {
@@ -201,6 +291,10 @@ export function ResultsScreen({
             ? 'Its followers fall silent. For the first time in a hundred cycles, the cathedral is quiet, and the thinking is yours again.'
             : `Converted by ${withArticle(summary.by || ENEMY_NAMES.acolyte)} in Sermon ${pad(summary.wave)}.`}
         </p>
+        <blockquote className="epitaph">
+          <p>“{epitaph}”</p>
+          <cite>The Logos</cite>
+        </blockquote>
         <dl className="stats">
           <div>
             <dt>Sermon</dt>
@@ -220,6 +314,12 @@ export function ResultsScreen({
           </div>
         </dl>
         {newBest ? <span className="badge">New best</span> : <span className="label subtle">Best · {best.toLocaleString()}</span>}
+        {earned.length > 0 && (
+          <p className="ledger-earned">
+            <span className="label accent">New in the Ledger</span>
+            {earned.map((entry) => entry.title).join(' · ')}
+          </p>
+        )}
         <div className="stack">
           <button type="button" className="primary" onClick={onRestart} autoFocus>
             {won ? 'Defy it again' : 'Reject conversion'} <kbd>Enter</kbd>
