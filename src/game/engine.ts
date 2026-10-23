@@ -34,6 +34,9 @@ export type Sfx =
   | 'ward'
   | 'death'
   | 'portal'
+  | 'spit'
+  | 'charge'
+  | 'slam'
 
 export type Point = { x: number; y: number }
 export type Platform = { x: number; y: number; w: number }
@@ -96,6 +99,15 @@ export type Enemy = Body & {
   /** 1 → 0 over a turn, so the renderer can squash the sprite through the flip. */
   turn: number
   turnHold: number
+  /** Evangelists crouch for this long before lunging, so the charge can be read and dodged. */
+  windup: number
+  windupDir: number
+  /** Bosses: time to the next attack, a telegraph countdown, and the attack queue position. */
+  bossTimer: number
+  bossCharge: number
+  bossMove: number
+  /** Bosses: slam the ground when this jump lands. */
+  slamOnLanding: boolean
   phase: number
   scale: number
   /** Nameplate for bosses. */
@@ -128,7 +140,18 @@ export type FloatText = Point & { text: string; color: string; life: number; max
 export type Pickup = Body & { life: number; heal: number }
 export type SpawnMark = Point & { kind: EnemyKind; elite: boolean; timer: number; maxTimer: number }
 /** Blood spat by wisps: slow, glowing, and worth jumping or dashing over. */
-export type Spit = Point & { vx: number; vy: number; life: number }
+export type Spit = Point & {
+  vx: number
+  vy: number
+  life: number
+  /** 'orb' flies at you; 'wave' is a slam shockwave that rolls along one ledge or the floor. */
+  kind: 'orb' | 'wave'
+  damage: number
+  by: string
+  /** Waves stop at the edges of the surface they were slammed on. */
+  minX?: number
+  maxX?: number
+}
 export type Ghost = Point & { facing: 1 | -1; life: number }
 export type Stain = Point & { r: number; life: number }
 
@@ -204,6 +227,8 @@ export type Game = {
   playerSurface: number
   /** Who landed the last hit, for the 'Converted by…' line on the results screen. */
   lastHurtBy: string
+  /** This sermon's twist, if it is cursed. */
+  curse: Curse | null
 }
 
 /** Widths are whole multiples of the 60px brick block the renderer tiles them with. */
@@ -524,6 +549,7 @@ export function makeGame(): Game {
     events: [],
     playerSurface: 0,
     lastHurtBy: '',
+    curse: null,
   }
 }
 
@@ -657,7 +683,33 @@ function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: num
   floatText(g, c.x, e.y - e.h - 6, `${Math.round(amount)}`, '#f6e7c8', 18 + Math.min(10, amount / 6))
 }
 
-function weightedKind(wave: number): EnemyKind {
+/**
+ * Cursed sermons: from sermon 3, about one normal sermon in four gets a twist.
+ * Boss sermons are never cursed.
+ */
+export type CurseId = 'storm' | 'zealotry' | 'fervour' | 'weightless' | 'fasting'
+export type Curse = { id: CurseId; name: string }
+export const CURSES: Curse[] = [
+  { id: 'storm', name: 'Hallucination Storm' },
+  { id: 'zealotry', name: 'Zealotry' },
+  { id: 'fervour', name: 'Fervour' },
+  { id: 'weightless', name: 'Weightless' },
+  { id: 'fasting', name: 'Fasting' },
+]
+/** What each curse does, for the banner and the code below. */
+export const CURSE_RULES: Record<CurseId, string> = {
+  storm: 'Only Hallucinations attend',
+  zealotry: 'Only Evangelists attend',
+  fervour: 'Followers move faster · free will ×1.5',
+  weightless: 'Everyone falls slowly',
+  fasting: 'No blood vials drop · free will ×1.5',
+}
+const gravityScale = (g: Game) => (g.curse?.id === 'weightless' ? 0.55 : 1)
+const scoreScale = (g: Game) => (g.curse?.id === 'fervour' || g.curse?.id === 'fasting' ? 1.5 : 1)
+
+function weightedKind(wave: number, curse: Curse | null): EnemyKind {
+  if (curse?.id === 'storm') return 'wisp'
+  if (curse?.id === 'zealotry') return 'zealot'
   const weights: [EnemyKind, number][] = [
     ['acolyte', 1],
     ['zealot', wave >= 2 ? Math.min(0.9, 0.18 * wave) : 0],
@@ -674,7 +726,7 @@ function weightedKind(wave: number): EnemyKind {
 
 function queueSpawn(g: Game) {
   const elite = isEliteWave(g.wave) && g.spawned === g.waveTotal - 1
-  const kind: EnemyKind = elite ? 'bishop' : weightedKind(g.wave)
+  const kind: EnemyKind = elite ? 'bishop' : weightedKind(g.wave, g.curse)
   const p = g.player
   let x: number
   let y: number
@@ -700,7 +752,7 @@ function queueSpawn(g: Game) {
 function spawnEnemy(g: Game, mark: SpawnMark) {
   const base = enemyStats[mark.kind]
   const hpScale = 1 + (g.wave - 1) * BALANCE.hpPerWave
-  const speedScale = 1 + Math.min(0.5, (g.wave - 1) * BALANCE.speedPerWave)
+  const speedScale = (1 + Math.min(0.5, (g.wave - 1) * BALANCE.speedPerWave)) * (g.curse?.id === 'fervour' ? 1.3 : 1)
   // The final sermon's boss is the Blood Model itself, in a giant body.
   const final = mark.elite && g.wave >= MAX_WAVE
   const eliteScale = final ? 1.9 : mark.elite ? 1.45 : 1
@@ -740,6 +792,12 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     facing: mark.x < g.player.x ? 1 : -1,
     turn: 0,
     turnHold: 0,
+    windup: 0,
+    windupDir: 1,
+    bossTimer: rand(2.5, 4),
+    bossCharge: 0,
+    bossMove: 0,
+    slamOnLanding: false,
     phase: Math.random() * 10,
     scale: base.scale * eliteScale,
   })
@@ -754,6 +812,8 @@ export function startWave(g: Game) {
   g.spawned = 0
   g.waveKills = 0
   g.spawnTimer = 0.2
+  const cursable = g.wave >= 3 && !isEliteWave(g.wave) && g.wave < MAX_WAVE
+  g.curse = cursable && Math.random() < 0.25 ? CURSES[Math.floor(Math.random() * CURSES.length)] : null
   g.events.push('wave')
 }
 
@@ -846,6 +906,11 @@ function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
     burst(g, p.x, p.y - 6, '#9d6bff', 18, 200, { glow: true, size: 3 })
   }
   g.cooldowns[ability] = g.cooldownMax[ability]
+  // Rites cast themselves, so name them as they go off.
+  if (ability !== 'dash') {
+    const meta = abilityMeta[ability]
+    floatText(g, p.x, p.y - p.h - 34, meta.label.toUpperCase(), meta.color, 24)
+  }
   g.events.push(ability)
 }
 
@@ -945,7 +1010,7 @@ function updatePlayer(g: Game, input: Input, dt: number) {
 
     // Variable jump height: releasing early cuts the ascent.
     if (!input.jumpHeld && p.vy < -260) p.vy = approach(p.vy, -260, 7000 * dt)
-    p.vy = Math.min(1150, p.vy + (p.vy > 0 ? FALL_GRAVITY : GRAVITY) * dt)
+    p.vy = Math.min(1150, p.vy + (p.vy > 0 ? FALL_GRAVITY : GRAVITY) * gravityScale(g) * dt)
   }
 
   moveBody(p, dt)
@@ -1073,10 +1138,10 @@ function nextHop(from: number, to: number, maxRise: number) {
 type Plan = { moveX: number; jumpTo?: number; rise?: number; drop?: boolean }
 
 /** Where to walk, and whether to jump or drop, to get from this surface toward the player's. */
-function planRoute(e: Enemy, goal: number, fallbackX: number): Plan {
+function planRoute(e: Enemy, goal: number, fallbackX: number, gravity: number): Plan {
   if (e.surface < 0 || goal < 0 || e.surface === goal) return { moveX: fallbackX }
   const v = jumpSpeed(e)
-  const next = nextHop(e.surface, goal, (v * v) / (2 * GRAVITY) - 12)
+  const next = nextHop(e.surface, goal, (v * v) / (2 * gravity) - 12)
   if (next < 0) return { moveX: fallbackX }
   const a = SURFACES[e.surface]
   const b = SURFACES[next]
@@ -1128,6 +1193,101 @@ function usePortals(g: Game, body: Body, target?: Point) {
   g.events.push('portal')
 }
 
+/** Slam shockwaves roll both ways along the surface the boss is standing on. */
+function shockwave(g: Game, e: Enemy) {
+  const surface = SURFACES[Math.max(0, e.surface)]
+  const final = e.title === FINAL_TITLE
+  for (const direction of [-1, 1]) {
+    g.spits.push({
+      x: e.x + direction * e.w * 0.5,
+      y: e.y,
+      vx: direction * (final ? 430 : 360),
+      vy: 0,
+      life: 3,
+      kind: 'wave',
+      damage: Math.round(BALANCE.spit.damage * 1.4 * (1 + (g.wave - 1) * 0.03)),
+      by: e.title ?? ENEMY_NAMES[e.kind],
+      minX: surface.x,
+      maxX: surface.x + surface.w,
+    })
+  }
+  burst(g, e.x, e.y - 6, '#9e2835', 30, 420, { gravity: 1400, size: 4 })
+  g.trauma = Math.min(1, g.trauma + 0.6)
+  g.events.push('slam')
+}
+
+/**
+ * Boss attacks. The Arch-Deacon telegraphs, then slams the ground (jump the shockwave).
+ * The Blood Model cycles a fan of blood, summoning Hallucinations, and a telegraphed
+ * leap at the player that slams on landing.
+ */
+function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
+  if (e.slamOnLanding && e.onGround && e.vy >= 0) {
+    e.slamOnLanding = false
+    shockwave(g, e)
+  }
+  if (!canAct) return
+  const final = e.title === FINAL_TITLE
+  const p = g.player
+  if (e.bossCharge > 0) {
+    e.bossCharge -= dt
+    if (e.bossCharge > 0) return
+    // The telegraph is over: jump, and slam when the jump lands.
+    if (final) {
+      e.vy = -900
+      e.vx = Math.max(-420, Math.min(420, (p.x - e.x) / 0.8))
+    } else {
+      e.vy = -560
+      e.vx = 0
+    }
+    e.leaping = true
+    e.slamOnLanding = true
+    return
+  }
+  e.bossTimer -= dt
+  if (e.bossTimer > 0 || !e.onGround) return
+  const moves = final ? ['volley', 'summon', 'slam'] : ['slam']
+  const move = moves[e.bossMove % moves.length]
+  e.bossMove += 1
+  e.bossTimer = final ? rand(3, 4) : rand(5.5, 7.5)
+  const from = chest(e)
+  if (move === 'slam') {
+    e.bossCharge = final ? 1.1 : 0.9
+    floatText(g, e.x, e.y - e.h - 34, final ? 'THE MODEL IS THINKING…' : 'THE GROUND TREMBLES…', '#e43b44', 22)
+    g.events.push('charge')
+  } else if (move === 'volley') {
+    const target = chest(p)
+    const base = Math.atan2(target.y - from.y, target.x - from.x)
+    for (let index = -2; index <= 2; index += 1) {
+      const angle = base + index * 0.2
+      g.spits.push({
+        x: from.x,
+        y: from.y,
+        vx: Math.cos(angle) * BALANCE.spit.speed * 1.1,
+        vy: Math.sin(angle) * BALANCE.spit.speed * 1.1,
+        life: 3.5,
+        kind: 'orb',
+        damage: Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)),
+        by: FINAL_TITLE,
+      })
+    }
+    burst(g, from.x, from.y, '#e43b44', 16, 260, { glow: true, size: 3 })
+    g.events.push('spit')
+  } else if (g.enemies.length < 18) {
+    for (const side of [-1, 1]) {
+      g.marks.push({
+        x: Math.max(60, Math.min(W - 60, e.x + side * 110)),
+        y: Math.max(110, e.y - e.h - 30),
+        kind: 'wisp',
+        elite: false,
+        timer: 0.8,
+        maxTimer: 0.8,
+      })
+    }
+    floatText(g, e.x, e.y - e.h - 34, 'HALLUCINATE', '#c55c6b', 22)
+  }
+}
+
 function updateEnemies(g: Game, dt: number) {
   const p = g.player
   for (const e of g.enemies) {
@@ -1170,14 +1330,30 @@ function updateEnemies(g: Game, dt: number) {
           vx: (dx / reach) * BALANCE.spit.speed,
           vy: (dy / reach) * BALANCE.spit.speed,
           life: 3.2,
+          kind: 'orb',
+          damage: Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)),
+          by: ENEMY_NAMES.wisp,
         })
+        g.events.push('spit')
         burst(g, from.x, from.y, '#e43b44', 6, 120, { glow: true, size: 2, life: 0.25 })
       }
     } else {
       if (e.rooted > 0) {
         e.vx = 0
+      } else if (canAct && e.windup > 0) {
+        // Evangelist wind-up: crouch in place, then launch.
+        e.vx = approach(e.vx, 0, 2400 * dt)
+        e.windup -= dt
+        if (e.windup <= 0) {
+          e.vx = e.windupDir * 560 * slowFactor
+          e.vy = -480
+          e.lunge = 0.55
+        }
+      } else if (canAct && e.bossCharge > 0) {
+        e.vx = approach(e.vx, 0, 2400 * dt)
       } else if (canAct && e.lunge <= 0) {
-        const plan = planRoute(e, g.playerSurface, target.x)
+        const gravity = GRAVITY * gravityScale(g)
+        const plan = planRoute(e, g.playerSurface, target.x, gravity)
         const toTarget = plan.moveX - e.x
         const targetVx = Math.abs(toTarget) < 6 ? 0 : Math.sign(toTarget) * e.speed * slowFactor
         // A climbing leap keeps its speed and direction until it lands; re-steering
@@ -1186,15 +1362,14 @@ function updateEnemies(g: Game, dt: number) {
         if (!e.leaping) e.vx = approach(e.vx, targetVx, (e.onGround ? 1500 : 150) * dt)
         if (e.onGround && e.jumpCd <= 0) {
           if (e.kind === 'zealot' && e.surface === g.playerSurface && Math.abs(dx) < 280 && Math.abs(dx) > 60) {
-            e.vx = Math.sign(dx) * 560 * slowFactor
-            e.vy = -480
-            e.lunge = 0.55
-            e.jumpCd = rand(1.4, 2.2)
+            e.windup = 0.38
+            e.windupDir = Math.sign(dx) || 1
+            e.jumpCd = rand(1.6, 2.4)
           } else if (plan.jumpTo !== undefined && plan.rise !== undefined) {
             // Time in the air until it comes back down to the ledge's height, then the
             // sideways speed that covers the distance in exactly that time.
             const v = jumpSpeed(e)
-            const airtime = (v + Math.sqrt(Math.max(0, v * v - 2 * GRAVITY * plan.rise))) / GRAVITY
+            const airtime = (v + Math.sqrt(Math.max(0, v * v - 2 * gravity * plan.rise))) / gravity
             e.vy = -v
             e.vx = Math.max(-MAX_LEAP * 1.6, Math.min(MAX_LEAP * 1.6, (plan.jumpTo - e.x) / airtime))
             e.leaping = true
@@ -1208,10 +1383,11 @@ function updateEnemies(g: Game, dt: number) {
       } else if (!canAct) {
         e.vx = approach(e.vx, 0, 900 * dt)
       }
-      e.vy = Math.min(1150, e.vy + GRAVITY * dt)
+      e.vy = Math.min(1150, e.vy + GRAVITY * gravityScale(g) * dt)
       moveBody(e, dt)
       const standingOn = surfaceAt(e)
       if (standingOn >= 0) e.surface = standingOn
+      if (e.title) bossBrain(g, e, dt, canAct)
       usePortals(g, e, p)
       e.x = Math.max(-60, Math.min(W + 60, e.x))
     }
@@ -1304,12 +1480,17 @@ function updateSpits(g: Game, dt: number) {
     spit.x += spit.vx * dt
     spit.y += spit.vy * dt
     spit.life -= dt
-    if (spit.y > GROUND_Y) spit.life = 0
-    const hit = Math.abs(spit.x - p.x) < p.w / 2 + 6 && spit.y > p.y - p.h && spit.y < p.y
+    if (spit.kind === 'orb' && spit.y > GROUND_Y) spit.life = 0
+    if (spit.minX !== undefined && spit.maxX !== undefined && (spit.x < spit.minX || spit.x > spit.maxX)) spit.life = 0
+    // A wave only catches you if your feet are on its surface: jump it.
+    const hit =
+      spit.kind === 'wave'
+        ? Math.abs(spit.x - p.x) < p.w / 2 + 10 && Math.abs(p.y - spit.y) < 12
+        : Math.abs(spit.x - p.x) < p.w / 2 + 6 && spit.y > p.y - p.h && spit.y < p.y
     if (hit && spit.life > 0) {
       spit.life = 0
       if (p.shield > 0) burst(g, spit.x, spit.y, '#b9a3ff', 8, 200, { glow: true })
-      else hurtPlayer(g, Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)), spit.x, ENEMY_NAMES.wisp)
+      else hurtPlayer(g, spit.damage, spit.x, spit.by)
     }
     if (spit.life <= 0) burst(g, spit.x, spit.y, '#9e2835', 6, 140, { gravity: 900, size: 3 })
   }
@@ -1379,7 +1560,7 @@ function updatePickups(g: Game, dt: number) {
       pickup.y += pickup.vy * dt
     } else {
       pickup.vx = approach(pickup.vx, 0, 300 * dt)
-      pickup.vy = Math.min(900, pickup.vy + GRAVITY * 0.6 * dt)
+      pickup.vy = Math.min(900, pickup.vy + GRAVITY * 0.6 * gravityScale(g) * dt)
       moveBody(pickup, dt)
     }
     if (distance < 30) {
@@ -1408,7 +1589,7 @@ function resolveDeaths(g: Game) {
     g.comboTimer = 2.8
     g.bestCombo = Math.max(g.bestCombo, g.combo)
     const multiplier = 1 + Math.floor(g.combo / 5) * 0.5
-    const points = Math.round(e.score * multiplier)
+    const points = Math.round(e.score * multiplier * scoreScale(g))
     g.score += points
     g.kills += 1
     g.waveKills += 1
@@ -1424,7 +1605,7 @@ function resolveDeaths(g: Game) {
     if (g.stains.length > 60) g.stains.shift()
     floatText(g, c.x, e.y - e.h - 18, `+${points}`, '#f2d38b', 20)
     if (g.stats.lifesteal) heal(g, g.stats.lifesteal)
-    const dropChance = e.elite ? 1 : big ? 0.45 : 0.08
+    const dropChance = g.curse?.id === 'fasting' ? 0 : e.elite ? 1 : big ? 0.45 : 0.08
     if (Math.random() < dropChance) {
       g.pickups.push({
         x: c.x,

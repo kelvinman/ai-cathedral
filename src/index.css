@@ -338,6 +338,13 @@
   box-shadow: inset 0 0 0 2px var(--gold1);
 }
 
+/* A rite that just cast itself flashes in its own colour. */
+.ability.is-firing {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--cream);
+  animation: pop 240ms steps(3);
+}
+
 .ability:active {
   translate: 0 2px;
 }
@@ -436,6 +443,25 @@
   color: var(--blood3);
   white-space: nowrap;
   text-shadow: none;
+}
+
+.banner small {
+  font-family: var(--pixel);
+  font-size: 22px;
+  color: var(--stone4);
+}
+
+/* Cursed sermons get a violet band instead of the gold one. */
+.banner.is-cursed {
+  box-shadow:
+    inset 0 var(--px) 0 var(--stone1),
+    inset 0 calc(var(--px) * -1) 0 var(--stone1),
+    inset 0 calc(var(--px) * 2) 0 #9d6bff,
+    inset 0 calc(var(--px) * -2) 0 #9d6bff;
+}
+
+.banner.is-cursed .label {
+  color: #b9a3ff;
 }
 
 .banner.is-cleared strong {

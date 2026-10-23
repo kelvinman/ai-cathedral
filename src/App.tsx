@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { playSfx, setMuted as setAudioMuted, unlockAudio } from './game/audio'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { playSfx, setMusicIntensity, setVolumes, startMusic, unlockAudio } from './game/audio'
 import {
-  ENEMY_NAMES,
   H,
   MAX_WAVE,
   W,
-  abilityMeta,
   chooseUpgrade,
   isEliteWave,
   makeGame,
@@ -14,16 +12,28 @@ import {
   stepAmbient,
   type AbilityKey,
   type Action,
+  type Curse,
   type Game,
   type Input,
   type Phase,
   type Upgrade,
-  type WaveState,
 } from './game/engine'
-import { ATLAS, loadAssets, render, type Assets, type View } from './game/render'
+import { loadAssets, render, setShakeEnabled, type Assets, type View } from './game/render'
+import { Hud, readHud, type HudState } from './ui/Hud'
+import {
+  ControlsPage,
+  MenuPanel,
+  ResultsScreen,
+  SermonBanner,
+  TitleScreen,
+  UpgradeScreen,
+  type MenuItem,
+  type RunSummary,
+} from './ui/Screens'
+import { ControlsList, pad } from './ui/shared'
+import { readStorage, writeStorage } from './ui/storage'
 
 const STEP = 1 / 120
-const ABILITY_ORDER: AbilityKey[] = ['dash', 'seal', 'volley', 'mirror', 'glyph']
 
 // Move, jump, drop and dash are the only inputs: firing and rites are automatic.
 const KEY_ACTIONS: Record<string, Action> = {
@@ -35,142 +45,25 @@ const KEY_ACTIONS: Record<string, Action> = {
   ShiftLeft: 'dash',
   ShiftRight: 'dash',
 }
-const GAME_KEYS = new Set([...Object.keys(KEY_ACTIONS), 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'])
+const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD']
+const GAME_KEYS = new Set([...Object.keys(KEY_ACTIONS), ...MOVE_KEYS])
+const RITES = new Set<string>(['seal', 'volley', 'mirror', 'glyph'])
 
-const ICONS: Partial<Record<AbilityKey, keyof typeof ATLAS>> = {
-  seal: 'splat',
-  volley: 'candelabra',
-  mirror: 'mirrorA',
-  glyph: 'skull',
-}
+type PauseView = 'menu' | 'controls' | 'settings'
+type Settings = { music: number; effects: number; shake: boolean }
 
-type Hud = {
-  hp: number
-  maxHp: number
-  wave: number
-  waveKills: number
-  waveTotal: number
-  waveState: WaveState
-  score: number
-  combo: number
-  comboFrac: number
-  cooldowns: Record<AbilityKey, number>
-  cooldownFrac: Record<AbilityKey, number>
-}
-
-function readHud(g: Game): Hud {
-  const cooldownFrac = {} as Record<AbilityKey, number>
-  for (const key of ABILITY_ORDER) cooldownFrac[key] = g.cooldowns[key] / g.cooldownMax[key]
-  return {
-    hp: Math.ceil(g.player.hp),
-    maxHp: g.player.maxHp,
-    wave: g.wave,
-    waveKills: g.waveKills,
-    waveTotal: g.waveTotal,
-    waveState: g.waveState,
-    score: g.score,
-    combo: g.combo,
-    comboFrac: Math.max(0, g.comboTimer / 2.8),
-    cooldowns: { ...g.cooldowns },
-    cooldownFrac,
-  }
-}
-
-function readStorage(key: string) {
+function loadSettings(): Settings {
+  const prefersCalm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   try {
-    return window.localStorage.getItem(key)
+    const saved = JSON.parse(readStorage('abc-settings') ?? '{}') as Partial<Settings>
+    return { music: saved.music ?? 0.6, effects: saved.effects ?? 0.8, shake: saved.shake ?? !prefersCalm }
   } catch {
-    return null
+    return { music: 0.6, effects: 0.8, shake: !prefersCalm }
   }
 }
 
-function writeStorage(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // Storage can be unavailable (private mode); the game still works without it.
-  }
-}
-
-const pad = (value: number) => String(value).padStart(2, '0')
-
-/** The line over each sermon's banner: who is joining, and when the bosses arrive. */
-function sermonLine(wave: number) {
-  if (wave >= MAX_WAVE) return 'The Blood Model speaks'
-  if (wave === 1) return `${ENEMY_NAMES.acolyte}s fill the nave`
-  if (wave === 2) return `${ENEMY_NAMES.zealot}s and ${ENEMY_NAMES.wisp}s join the sermon`
-  if (wave === 5) return `The Arch-Deacon leads the ${ENEMY_NAMES.bishop}s in`
-  if (isEliteWave(wave)) return 'The Arch-Deacon returns'
-  if (wave === MAX_WAVE - 1) return 'The model is almost done thinking'
-  return 'The model is thinking'
-}
-
-/** "an Evangelist", "a Hype Bishop", "the Arch-Deacon". */
-function withArticle(name: string) {
-  if (name.startsWith('The ')) return `the ${name.slice(4)}`
-  return `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
-}
-
-function AtlasIcon({ name, size = 34 }: { name: keyof typeof ATLAS; size?: number }) {
-  const [x, y, w, h] = ATLAS[name]
-  const scale = size / Math.max(w, h)
-  return (
-    <span
-      className="atlas-icon"
-      aria-hidden="true"
-      style={{
-        width: w * scale,
-        height: h * scale,
-        backgroundPosition: `-${x * scale}px -${y * scale}px`,
-        backgroundSize: `${160 * scale}px ${128 * scale}px`,
-      }}
-    />
-  )
-}
-
-/** The four inputs, plus a reminder that firing and rites are automatic. */
-function ControlsList() {
-  return (
-    <>
-      <dl className="controls">
-        <div>
-          <dt>
-            <kbd>A</kbd>
-            <kbd>D</kbd>
-          </dt>
-          <dd>Move</dd>
-        </div>
-        <div>
-          <dt>
-            <kbd>Space</kbd>
-          </dt>
-          <dd>Jump ×2</dd>
-        </div>
-        <div>
-          <dt>
-            <kbd>S</kbd>
-          </dt>
-          <dd>Drop down</dd>
-        </div>
-        <div>
-          <dt>
-            <kbd>Shift</kbd>
-          </dt>
-          <dd>Dash</dd>
-        </div>
-      </dl>
-      <p className="controls-note">You fire automatically. Your rites cast themselves.</p>
-    </>
-  )
-}
-
-function DashIcon() {
-  return (
-    <svg className="dash-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 6l6 6-6 6M12 6l6 6-6 6" />
-    </svg>
-  )
-}
+const clampStep = (value: number, delta: number) => Math.round(Math.max(0, Math.min(1, value + delta)) * 10) / 10
+const percent = (value: number) => (value <= 0 ? 'off' : `${Math.round(value * 100)}%`)
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -180,18 +73,23 @@ export default function App() {
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: W, height: H })
   const heldRef = useRef(new Set<string>())
   const touchRef = useRef({ left: false, right: false, down: false, jump: false })
-  const inputRef = useRef<Input>({
-    left: false,
-    right: false,
-    down: false,
-    jumpHeld: false,
-    pressed: new Set(),
-  })
+  const inputRef = useRef<Input>({ left: false, right: false, down: false, jumpHeld: false, pressed: new Set() })
   const phaseRef = useRef<Phase>('title')
 
   const [phase, setPhase] = useState<Phase>('title')
-  const [hud, setHud] = useState<Hud>(() => readHud(gameRef.current))
+  const [hud, setHud] = useState<HudState>(() => readHud(gameRef.current))
+  const [curse, setCurse] = useState<Curse | null>(null)
+  const [flashing, setFlashing] = useState<Set<AbilityKey>>(new Set())
   const [offers, setOffers] = useState<Upgrade[]>([])
+  const [levels, setLevels] = useState<Record<string, number>>({})
+  const [best, setBest] = useState(() => Number(readStorage('abc-best') ?? 0))
+  const [newBest, setNewBest] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [touch, setTouch] = useState(false)
+  const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '' })
+  const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
+  const [settings, setSettings] = useState<Settings>(loadSettings)
+
   // Highlighted upgrade card. The ref mirrors it for the key handler; confirming is
   // ignored briefly after the screen opens so a jump press can't pick a card by accident.
   const [selected, setSelected] = useState(0)
@@ -201,15 +99,27 @@ export default function App() {
     selectedRef.current = index
     setSelected(index)
   }, [])
-  // Highlighted pause-menu button, moved with ↑ ↓ and activated with Enter or Space.
+
+  // Pause menu: which page is showing, and which row is highlighted (moved with ↑ ↓).
+  const [pauseView, setPauseView] = useState<PauseView>('menu')
+  const pauseViewRef = useRef<PauseView>('menu')
   const [pauseIndex, setPauseIndex] = useState(0)
-  // The pause menu can show a Controls page instead of its buttons.
-  const [pauseView, setPauseView] = useState<'menu' | 'controls'>('menu')
-  const pauseViewRef = useRef<'menu' | 'controls'>('menu')
-  const showPauseView = useCallback((view: 'menu' | 'controls') => {
-    pauseViewRef.current = view
-    setPauseView(view)
+  const pauseIndexRef = useRef(0)
+  const menuItemsRef = useRef<MenuItem[]>([])
+  const adjustRef = useRef<((delta: number) => void)[]>([])
+  const selectPause = useCallback((index: number) => {
+    pauseIndexRef.current = index
+    setPauseIndex(index)
   }, [])
+  const showPauseView = useCallback(
+    (view: PauseView) => {
+      pauseViewRef.current = view
+      setPauseView(view)
+      selectPause(0)
+    },
+    [selectPause],
+  )
+
   // First run only: a controls card that fades once the player starts moving.
   const [controlsCard, setControlsCard] = useState(false)
   const controlsCardRef = useRef(false)
@@ -219,24 +129,13 @@ export default function App() {
     setControlsCard(false)
     writeStorage('abc-seen-controls', '1')
   }, [])
-  const pauseIndexRef = useRef(0)
-  const pauseActionsRef = useRef<(() => void)[]>([])
-  const selectPause = useCallback((index: number) => {
-    pauseIndexRef.current = index
-    setPauseIndex(index)
-  }, [])
-  const [levels, setLevels] = useState<Record<string, number>>({})
-  const [best, setBest] = useState(() => Number(readStorage('abc-best') ?? 0))
-  const [newBest, setNewBest] = useState(false)
-  const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
-  const [ready, setReady] = useState(false)
-  const [touch, setTouch] = useState(false)
-  const [summary, setSummary] = useState({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '' })
 
   useEffect(() => {
-    setAudioMuted(muted)
+    setVolumes(muted ? 0 : settings.music, muted ? 0 : settings.effects)
+    setShakeEnabled(settings.shake)
     writeStorage('abc-muted', muted ? '1' : '0')
-  }, [muted])
+    writeStorage('abc-settings', JSON.stringify(settings))
+  }, [muted, settings])
 
   useEffect(() => {
     const query = window.matchMedia('(pointer: coarse)')
@@ -254,6 +153,7 @@ export default function App() {
 
   const startGame = useCallback(() => {
     unlockAudio()
+    startMusic()
     const game = makeGame()
     game.phase = 'playing'
     startWave(game)
@@ -261,6 +161,7 @@ export default function App() {
     inputRef.current.pressed.clear()
     setLevels({})
     setNewBest(false)
+    setCurse(game.curse)
     setHud(readHud(game))
     phaseRef.current = 'playing'
     setPhase('playing')
@@ -283,6 +184,7 @@ export default function App() {
       chooseUpgrade(game, upgrade)
       setLevels({ ...game.levels })
       setOffers([])
+      setCurse(game.curse)
       goTo('playing')
     },
     [goTo],
@@ -299,27 +201,32 @@ export default function App() {
       unlockAudio()
       if (GAME_KEYS.has(event.code) && game.phase === 'playing') event.preventDefault()
       if (game.phase === 'upgrade' && ['Space', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
-      if (game.phase === 'paused' && pauseViewRef.current === 'controls') {
-        if (['Escape', 'Enter', 'Space', 'Backspace'].includes(event.code)) {
-          event.preventDefault()
-          showPauseView('menu')
+
+      if (game.phase === 'paused') {
+        const view = pauseViewRef.current
+        if (view === 'controls' || (view === 'settings' && event.code === 'Escape')) {
+          if (['Escape', 'Enter', 'Space', 'Backspace'].includes(event.code)) {
+            event.preventDefault()
+            showPauseView('menu')
+          }
+          return
         }
-        return
-      }
-      if (game.phase === 'paused' && ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'Enter', 'Space'].includes(event.code)) {
-        event.preventDefault()
-        const count = pauseActionsRef.current.length
-        if (event.code === 'ArrowUp' || event.code === 'KeyW') selectPause((pauseIndexRef.current + count - 1) % count)
-        if (event.code === 'ArrowDown' || event.code === 'KeyS') selectPause((pauseIndexRef.current + 1) % count)
-        if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) pauseActionsRef.current[pauseIndexRef.current]?.()
-        return
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Enter', 'Space'].includes(event.code)) {
+          event.preventDefault()
+          const count = menuItemsRef.current.length
+          const index = pauseIndexRef.current
+          if (event.code === 'ArrowUp' || event.code === 'KeyW') selectPause((index + count - 1) % count)
+          if (event.code === 'ArrowDown' || event.code === 'KeyS') selectPause((index + 1) % count)
+          if (event.code === 'ArrowLeft' || event.code === 'KeyA') adjustRef.current[index]?.(-1)
+          if (event.code === 'ArrowRight' || event.code === 'KeyD') adjustRef.current[index]?.(1)
+          if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) menuItemsRef.current[index]?.run()
+          return
+        }
       }
       if (event.repeat) return
       heldRef.current.add(event.code)
       // The first-run card fades as soon as the player moves, jumps or dashes.
-      if (game.phase === 'playing' && (KEY_ACTIONS[event.code] || ['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(event.code))) {
-        dismissControlsCard()
-      }
+      if (game.phase === 'playing' && (KEY_ACTIONS[event.code] || MOVE_KEYS.includes(event.code))) dismissControlsCard()
 
       if (game.phase === 'upgrade') {
         const count = game.offers.length
@@ -374,11 +281,8 @@ export default function App() {
   }, [dismissControlsCard, goTo, pick, press, select, selectPause, showPauseView, startGame, togglePause])
 
   useEffect(() => {
-    if (phase === 'paused') {
-      selectPause(0)
-      showPauseView('menu')
-    }
-  }, [phase, selectPause, showPauseView])
+    if (phase === 'paused') showPauseView('menu')
+  }, [phase, showPauseView])
 
   // The first-run card also fades on its own after a while.
   useEffect(() => {
@@ -386,6 +290,13 @@ export default function App() {
     const timer = window.setTimeout(dismissControlsCard, 9000)
     return () => window.clearTimeout(timer)
   }, [controlsCard, dismissControlsCard, phase])
+
+  // Music swells on boss sermons and goes quiet on menus.
+  useEffect(() => {
+    if (phase === 'playing') setMusicIntensity(hud.wave >= MAX_WAVE ? 2 : isEliteWave(hud.wave) ? 1 : 0.5)
+    else if (phase === 'title') setMusicIntensity(0.25)
+    else setMusicIntensity(0)
+  }, [phase, hud.wave])
 
   // Game loop.
   useEffect(() => {
@@ -424,6 +335,7 @@ export default function App() {
     let accumulator = 0
     let hudTimer = 0
     let raf = 0
+    const flashTimers = new Map<AbilityKey, number>()
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame)
       const dt = Math.min(0.1, (now - last) / 1000)
@@ -452,8 +364,23 @@ export default function App() {
         if (game.phase !== 'paused') stepAmbient(game, dt)
       }
 
-      for (const sound of game.events) playSfx(sound)
+      // Sounds, and a brief flash on the HUD icon of any rite that just cast itself.
+      let flashChanged = false
+      for (const sound of game.events) {
+        playSfx(sound)
+        if (RITES.has(sound)) {
+          flashTimers.set(sound as AbilityKey, now + 450)
+          flashChanged = true
+        }
+      }
       game.events.length = 0
+      for (const [key, until] of flashTimers) {
+        if (until < now) {
+          flashTimers.delete(key)
+          flashChanged = true
+        }
+      }
+      if (flashChanged) setFlashing(new Set(flashTimers.keys()))
 
       if (game.phase !== phaseRef.current) {
         phaseRef.current = game.phase
@@ -481,9 +408,7 @@ export default function App() {
       }
 
       const assets = assetsRef.current
-      if (assets) {
-        render(ctx, game, assets, viewRef.current)
-      }
+      if (assets) render(ctx, game, assets, viewRef.current)
     }
     raf = requestAnimationFrame(frame)
     return () => {
@@ -491,7 +416,7 @@ export default function App() {
       cancelAnimationFrame(raf)
       observer.disconnect()
     }
-  }, [touch])
+  }, [select])
 
   const holdTouch = (key: keyof typeof touchRef.current, action?: Action) => ({
     onPointerDown: (event: ReactPointerEvent) => {
@@ -509,110 +434,52 @@ export default function App() {
     },
   })
 
-  const healthFrac = Math.max(0, hud.hp / hud.maxHp)
-  const waveFrac = hud.waveTotal ? hud.waveKills / hud.waveTotal : 0
-  // Health is shown as blood-drop pips worth 20 HP each.
-  const pipCount = Math.ceil(hud.maxHp / 20)
-  const pipsFull = Math.ceil(hud.hp / 20)
-  // The gold orb fills with the combo timer; its liquid spans sprite rows 3–36 and
-  // drains a whole pixel row at a time.
-  const orbFillTop = 3 + Math.round((1 - (hud.combo >= 2 ? hud.comboFrac : 0)) * 33)
-  const pauseItems = [
+  const pauseItems: MenuItem[] = [
     { label: 'Resume', key: 'Esc', style: 'primary', run: () => goTo('playing') },
     { label: 'Restart', key: 'R', style: 'secondary', run: startGame },
     { label: 'Controls', key: '', style: 'secondary', run: () => showPauseView('controls') },
-    { label: `Sound: ${muted ? 'off' : 'on'}`, key: 'M', style: 'secondary', run: () => setMuted((value) => !value) },
+    { label: 'Settings', key: '', style: 'secondary', run: () => showPauseView('settings') },
     { label: 'Quit to title', key: '', style: 'ghost', run: () => goTo('title') },
   ]
-  pauseActionsRef.current = pauseItems.map((item) => item.run)
+  const change = (patch: Partial<Settings>) => {
+    setMuted(false)
+    setSettings((current) => ({ ...current, ...patch }))
+  }
+  const settingsItems: MenuItem[] = [
+    { label: `◀ Music ${percent(muted ? 0 : settings.music)} ▶`, key: '', style: 'secondary', run: () => change({ music: settings.music > 0 ? 0 : 0.6 }) },
+    { label: `◀ Effects ${percent(muted ? 0 : settings.effects)} ▶`, key: '', style: 'secondary', run: () => change({ effects: settings.effects > 0 ? 0 : 0.8 }) },
+    { label: `Screen shake: ${settings.shake ? 'on' : 'off'}`, key: '', style: 'secondary', run: () => change({ shake: !settings.shake }) },
+    { label: 'Back', key: 'Esc', style: 'ghost', run: () => showPauseView('menu') },
+  ]
+  const settingsAdjust = [
+    (delta: number) => change({ music: clampStep(settings.music, delta * 0.1) }),
+    (delta: number) => change({ effects: clampStep(settings.effects, delta * 0.1) }),
+    () => change({ shake: !settings.shake }),
+  ]
+  menuItemsRef.current = pauseView === 'settings' ? settingsItems : pauseItems
+  adjustRef.current = pauseView === 'settings' ? settingsAdjust : []
+
   const playing = phase === 'playing'
-  const showHud = phase !== 'title'
 
   return (
     <main className={`game ${playing ? 'is-playing' : ''}`}>
       <div className="stage" ref={stageRef}>
-        <canvas
-          ref={canvasRef}
-          aria-label="AI Blood Cathedral arena"
-          onContextMenu={(event) => event.preventDefault()}
-        />
+        <canvas ref={canvasRef} aria-label="AI Blood Cathedral arena" onContextMenu={(event) => event.preventDefault()} />
 
-        {showHud && (
-          <div className="hud" aria-live="off">
-            <div className="corner">
-              <div className="orb" style={{ '--fill-top': `${orbFillTop}` } as CSSProperties} title="Combo">
-                <span className="orb-fill" />
-                <span className="orb-frame" />
-                {hud.combo >= 2 && <b key={hud.combo}>×{hud.combo}</b>}
-              </div>
-              <div className="corner-stack">
-                <div className={`health-pips ${healthFrac < 0.3 ? 'is-low' : ''}`} aria-label={`Health ${hud.hp} of ${hud.maxHp}`}>
-                  {Array.from({ length: pipCount }, (_, index) => (
-                    <i key={index} className={index < pipsFull ? 'is-full' : ''} />
-                  ))}
-                </div>
-                <div className="abilities">
-                  {ABILITY_ORDER.map((key) => {
-                    const meta = abilityMeta[key]
-                    const frac = hud.cooldownFrac[key]
-                    const isReady = frac <= 0
-                    const icon = ICONS[key]
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        tabIndex={-1}
-                        className={`ability ${isReady ? 'is-ready' : ''}`}
-                        style={{ '--accent': meta.color } as CSSProperties}
-                        onPointerDown={(event) => {
-                          event.preventDefault()
-                          unlockAudio()
-                          if (key === 'dash') press('dash')
-                        }}
-                        title={`${meta.label}: ${meta.caption}`}
-                      >
-                        <span className="ability-icon">{icon ? <AtlasIcon name={icon} /> : <DashIcon />}</span>
-                        <span className="ability-fill" style={{ transform: `scaleY(${frac})` }} />
-                        {!isReady && <span className="ability-timer">{Math.ceil(hud.cooldowns[key])}</span>}
-                        {key === 'dash' && <span className="ability-key">⇧</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="sermon-title">
-              <span>
-                Sermon {pad(hud.wave)} / {MAX_WAVE}
-              </span>
-              <div className="sermon-progress">
-                <i style={{ transform: `scaleX(${waveFrac})` }} />
-              </div>
-            </div>
-
-            <strong className="score">{hud.score.toLocaleString()}</strong>
-
-            {touch && (playing || phase === 'paused') && (
-              <button type="button" tabIndex={-1} className="pause-button" onClick={togglePause} aria-label="Pause">
-                ❚❚
-              </button>
-            )}
-          </div>
+        {phase !== 'title' && (
+          <Hud
+            hud={hud}
+            flashing={flashing}
+            showPauseButton={touch && (playing || phase === 'paused')}
+            onPause={togglePause}
+            onDash={() => {
+              unlockAudio()
+              press('dash')
+            }}
+          />
         )}
 
-        {playing && hud.waveState === 'intro' && (
-          <div className="banner" key={`wave-${hud.wave}`}>
-            <span className="label">{sermonLine(hud.wave)}</span>
-            <strong>Sermon {pad(hud.wave)}</strong>
-          </div>
-        )}
-        {playing && hud.waveState === 'cleared' && (
-          <div className="banner is-cleared" key={`clear-${hud.wave}`}>
-            <span className="label">Followers resisted</span>
-            <strong>Sermon cleared</strong>
-          </div>
-        )}
+        {playing && <SermonBanner wave={hud.wave} waveState={hud.waveState} curse={curse} />}
 
         {playing && controlsCard && !touch && (
           <div className="panel controls-card" aria-live="polite">
@@ -654,146 +521,47 @@ export default function App() {
           </div>
         )}
 
-        {phase === 'title' && (
-          <div className="overlay">
-            <div className="panel title-panel">
-              <span className="sigil" aria-hidden="true" />
-              <span className="label accent">The hundredth conversion cycle</span>
-              <h1>
-                AI Blood <em>Cathedral</em>
-              </h1>
-              <p className="lede">
-                The Blood Model promised its followers perfect certainty. Now they pour through the nave to convert
-                the last apostate: you. Turn the model&apos;s own tokens against it, and outlast twenty sermons.
-              </p>
-              <button type="button" className="primary" onClick={startGame} disabled={!ready} autoFocus>
-                {ready ? 'Refuse the model' : 'Lighting candles…'}
-                <kbd>Enter</kbd>
-              </button>
-              {best > 0 && <span className="label subtle">Best free will · {best.toLocaleString()}</span>}
-            </div>
-          </div>
-        )}
+        {phase === 'title' && <TitleScreen ready={ready} best={best} onStart={startGame} />}
 
         {phase === 'paused' && (
           <div className="overlay">
-            {pauseView === 'controls' ? (
-              <div className="panel small-panel controls-panel">
-                <span className="label accent">Paused</span>
-                <h2>Controls</h2>
-                <ControlsList />
-                <button type="button" tabIndex={-1} className="secondary is-selected" onClick={() => showPauseView('menu')}>
-                  Back <kbd>Esc</kbd>
-                </button>
-              </div>
-            ) : (
-              <div className="panel small-panel">
-                <span className="label accent">Sermon {pad(hud.wave)}</span>
-                <h2>Paused</h2>
-                <div className="stack">
-                  {pauseItems.map((item, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      tabIndex={-1}
-                      className={`${item.style} ${index === pauseIndex ? 'is-selected' : ''}`}
-                      onPointerEnter={() => selectPause(index)}
-                      onClick={item.run}
-                    >
-                      {item.label}
-                      {item.key && <kbd>{item.key}</kbd>}
-                    </button>
-                  ))}
-                </div>
-                <p className="choose-hint">
-                  <kbd>↑</kbd>
-                  <kbd>↓</kbd> choose · <kbd>Enter</kbd> select
-                </p>
-              </div>
+            {pauseView === 'controls' && <ControlsPage onBack={() => showPauseView('menu')} />}
+            {pauseView === 'menu' && (
+              <MenuPanel
+                kicker={`Sermon ${pad(hud.wave)}`}
+                title="Paused"
+                items={pauseItems}
+                index={pauseIndex}
+                onSelect={selectPause}
+                hint="choose · Enter select"
+              />
+            )}
+            {pauseView === 'settings' && (
+              <MenuPanel
+                kicker="Paused"
+                title="Settings"
+                items={settingsItems}
+                index={pauseIndex}
+                onSelect={selectPause}
+                hint="choose · ← → adjust"
+              />
             )}
           </div>
         )}
 
         {phase === 'upgrade' && (
-          <div className="overlay">
-            <div className="panel upgrade-panel">
-              <span className="label accent">Sermon {pad(hud.wave)} survived</span>
-              <h2>Choose a counter-doctrine</h2>
-              <div className="cards">
-                {offers.map((upgrade, index) => {
-                  const level = levels[upgrade.id] ?? 0
-                  return (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      key={upgrade.id}
-                      className={`card ${index === selected ? 'is-selected' : ''}`}
-                      onPointerEnter={() => select(index)}
-                      onClick={() => pick(upgrade)}
-                    >
-                      <span className="label">{upgrade.eyebrow}</span>
-                      <strong>{upgrade.title}</strong>
-                      <p>{upgrade.description}</p>
-                      <span className="pips" aria-label={`Level ${level} of ${upgrade.max}`}>
-                        {Array.from({ length: upgrade.max }, (_, pip) => (
-                          <i key={pip} className={pip < level ? 'is-on' : pip === level ? 'is-next' : ''} />
-                        ))}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="choose-hint">
-                <kbd>←</kbd>
-                <kbd>→</kbd> choose · <kbd>Space</kbd> confirm
-              </p>
-            </div>
-          </div>
+          <UpgradeScreen wave={hud.wave} offers={offers} levels={levels} selected={selected} onSelect={select} onPick={pick} />
         )}
 
         {(phase === 'dead' || phase === 'won') && (
-          <div className="overlay">
-            <div className="panel small-panel end-panel">
-              <span className="label accent">{phase === 'won' ? 'The final sermon' : 'Conversion complete'}</span>
-              <h2>{phase === 'won' ? 'The Blood Model could not convert you.' : 'You joined the model.'}</h2>
-              <p className="lede">
-                {phase === 'won'
-                  ? 'Its followers fall silent. For the first time in a hundred cycles, the cathedral is quiet, and the thinking is yours again.'
-                  : `Converted by ${withArticle(summary.by || ENEMY_NAMES.acolyte)} in Sermon ${pad(summary.wave)}.`}
-              </p>
-              <dl className="stats">
-                <div>
-                  <dt>Sermon</dt>
-                  <dd>{pad(summary.wave)}</dd>
-                </div>
-                <div>
-                  <dt>Resisted</dt>
-                  <dd>{summary.kills}</dd>
-                </div>
-                <div>
-                  <dt>Best combo</dt>
-                  <dd>{summary.bestCombo ? `×${summary.bestCombo}` : '–'}</dd>
-                </div>
-                <div>
-                  <dt>Free will</dt>
-                  <dd>{summary.score.toLocaleString()}</dd>
-                </div>
-              </dl>
-              {newBest ? (
-                <span className="badge">New best</span>
-              ) : (
-                <span className="label subtle">Best · {best.toLocaleString()}</span>
-              )}
-              <div className="stack">
-                <button type="button" className="primary" onClick={startGame} autoFocus>
-                  {phase === 'won' ? 'Defy it again' : 'Reject conversion'} <kbd>Enter</kbd>
-                </button>
-                <button type="button" className="ghost" onClick={() => goTo('title')}>
-                  Title screen
-                </button>
-              </div>
-            </div>
-          </div>
+          <ResultsScreen
+            won={phase === 'won'}
+            summary={summary}
+            best={best}
+            newBest={newBest}
+            onRestart={startGame}
+            onTitle={() => goTo('title')}
+          />
         )}
       </div>
     </main>

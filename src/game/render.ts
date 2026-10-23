@@ -6,6 +6,7 @@ import {
   PLATFORMS,
   PLAYER_SCALE,
   PORTALS,
+  FINAL_TITLE,
   W,
   type Enemy,
   type Game,
@@ -94,6 +95,7 @@ export type Assets = {
     zealot: Sprite
     bishop: Sprite
     elite: Sprite
+    final: Sprite
     flash: Sprite
     slowed: Sprite
     rooted: Sprite
@@ -413,6 +415,8 @@ export function loadAssets() {
         zealot: outlined(enemy, '#4a0711', ['#7a33e0', 0.38]),
         bishop: outlined(enemy, '#4a0711', ['#c0142a', 0.42]),
         elite: outlined(enemy, '#f2b04a', ['#c0142a', 0.5]),
+        // The Blood Model: a shadow-dark body with a blood-red outline.
+        final: outlined(enemy, '#e43b44', ['#181425', 0.6]),
         flash: silhouette(enemy, '#ffffff'),
         slowed: silhouette(enemy, '#ff2a40'),
         rooted: silhouette(enemy, '#a77bff'),
@@ -471,11 +475,15 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, time
     const walking = e.onGround && Math.abs(e.vx) > 20
     const bob = walking ? Math.abs(Math.sin(e.phase * 11)) * 3 : 0
     const tilt = walking ? Math.sin(e.phase * 11) * 0.05 : e.lunge > 0 ? e.facing * 0.25 : 0
-    const stretch = e.onGround ? 1 : 1.06
-    const base = e.elite ? assets.enemy.elite : assets.enemy[e.kind]
-    const sprite = e.flash > 0 ? assets.enemy.flash : base
+    // Tells: an Evangelist crouches before lunging; a boss shudders before slamming.
+    const crouch = e.windup > 0 ? 0.78 : 1
+    const shudder = e.bossCharge > 0 ? (Math.floor(time * 30) % 2 ? PX : -PX) : 0
+    const stretch = (e.onGround ? 1 : 1.06) * crouch
+    const base = e.title === FINAL_TITLE ? assets.enemy.final : e.elite ? assets.enemy.elite : assets.enemy[e.kind]
+    const telling = (e.windup > 0 || e.bossCharge > 0) && Math.floor(time * 12) % 2 === 0
+    const sprite = e.flash > 0 || telling ? assets.enemy.flash : base
     const flip = flipEnemy(e.facing)
-    drawCharacter(ctx, sprite, e.x, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
+    drawCharacter(ctx, sprite, e.x + shudder, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
     if (e.rooted > 0 || e.slow > 0) {
       ctx.globalAlpha = e.rooted > 0 ? 0.55 : 0.3 + Math.sin(time * 12) * 0.1
       drawCharacter(ctx, e.rooted > 0 ? assets.enemy.rooted : assets.enemy.slowed, e.x, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
@@ -498,6 +506,12 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, time
       ctx.fillText(e.title.toUpperCase(), e.x, top - 6)
     }
   }
+}
+
+let shakeEnabled = true
+/** Players can turn screen shake off in Settings (it defaults off with reduced motion). */
+export function setShakeEnabled(value: boolean) {
+  shakeEnabled = value
 }
 
 export type View = { scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number }
@@ -536,8 +550,10 @@ export function render(
   }
   if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
-    const glow = e.kind === 'wisp' ? '220, 30, 60' : e.elite ? '242, 176, 74' : '220, 20, 45'
-    halo(ground, e.x, e.y - e.h * 0.5, e.kind === 'wisp' ? 40 : e.h * 0.7, glow, e.kind === 'wisp' ? 0.5 : e.elite ? 0.35 : 0.16)
+    const final = e.title === FINAL_TITLE
+    const glow = e.kind === 'wisp' || final ? '220, 30, 60' : e.elite ? '242, 176, 74' : '220, 20, 45'
+    const strength = e.kind === 'wisp' ? 0.5 : final ? 0.6 + (e.bossCharge > 0 ? 0.3 : 0) : e.elite ? 0.35 : 0.16
+    halo(ground, e.x, e.y - e.h * 0.5, e.kind === 'wisp' ? 40 : e.h * (final ? 0.9 : 0.7), glow, strength)
   }
   ground.globalCompositeOperation = 'source-over'
 
@@ -665,6 +681,16 @@ export function render(
   }
 
   for (const spit of g.spits) {
+    if (spit.kind === 'wave') {
+      // A shockwave: a cluster of blood spikes rolling along the ground.
+      for (let column = -3; column <= 3; column += 1) {
+        const height = snap(26 - Math.abs(column) * 6 + (Math.floor(time * 20 + column) % 2) * PX * 2)
+        glow.fillStyle = column === 0 ? '#ffffff' : Math.abs(column) < 2 ? '#e43b44' : '#9e2835'
+        glow.fillRect(snap(spit.x + column * PX * 2), spit.y - height, PX * 2, height)
+      }
+      halo(glow, spit.x, spit.y - 10, 26, '228, 59, 68', 0.7)
+      continue
+    }
     for (let index = 1; index <= 3; index += 1) {
       glow.fillStyle = `rgba(228, 59, 68, ${0.5 - index * 0.12})`
       glow.fillRect(snap(spit.x - spit.vx * 0.02 * index) - PX, snap(spit.y - spit.vy * 0.02 * index) - PX, PX * 2, PX * 2)
@@ -716,7 +742,7 @@ export function render(
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = '#050307'
   ctx.fillRect(0, 0, view.width * view.dpr, view.height * view.dpr)
-  const shake = g.trauma * g.trauma * 16
+  const shake = shakeEnabled ? g.trauma * g.trauma * 16 : 0
   const shakeX = snap(Math.sin(time * 53.1) * shake)
   const shakeY = snap(Math.cos(time * 47.3) * shake)
   const s = view.scale * view.dpr
