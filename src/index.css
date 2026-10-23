@@ -871,6 +871,20 @@
   border: 0;
 }
 
+/* Tutorial hints stay put (no fade) until they're done. */
+.controls-card.tutorial {
+  width: min(520px, calc(100% - 32px));
+  animation: drop 260ms steps(4);
+}
+
+.controls-card.tutorial p {
+  margin: 0 0 4px;
+  font-family: var(--pixel);
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--cream);
+}
+
 @keyframes fade-late {
   0%,
   80% {

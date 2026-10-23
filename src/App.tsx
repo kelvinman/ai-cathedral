@@ -39,6 +39,7 @@ import {
 } from './ui/Screens'
 import { ControlsList, RiteTip, pad } from './ui/shared'
 import { GAME_KEYS, heldKeys, keyAction, keyPlayer, readPads } from './ui/controls'
+import { LESSONS, advanceTutorial, startTutorial, type Device, type Tutorial } from './ui/tutorial'
 import { readStorage, writeStorage } from './ui/storage'
 
 const STEP = 1 / 120
@@ -93,7 +94,7 @@ export default function App() {
   const modeRef = useRef<Mode>('story')
   const [players, setPlayers] = useState(() => (readStorage('abc-players') === '2' ? 2 : 1))
   const playersRef = useRef(players)
-  const keyHandlerRef = useRef<(event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'>) => void>(() => {})
+  const keyHandlerRef = useRef<(event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'> & { fromPad?: boolean }) => void>(() => {})
 
   const [phase, setPhase] = useState<Phase>('title')
   const [hud, setHud] = useState<HudState>(() => readHud(gameRef.current))
@@ -179,6 +180,18 @@ export default function App() {
     [selectPause],
   )
 
+  // The first story run teaches the basics one hint at a time (see ui/tutorial.ts).
+  const tutorialRef = useRef<Tutorial | null>(null)
+  const [lesson, setLesson] = useState<number | null>(null)
+  // What the player last touched, so hints and key labels can name the right buttons.
+  const [device, setDevice] = useState<Device>('keys')
+  const deviceRef = useRef<Device>('keys')
+  const markDevice = useCallback((next: Device) => {
+    if (deviceRef.current === next) return
+    deviceRef.current = next
+    setDevice(next)
+  }, [])
+
   // First run only: a controls card that fades once the player starts moving.
   const [controlsCard, setControlsCard] = useState(false)
   const controlsCardRef = useRef(false)
@@ -234,8 +247,13 @@ export default function App() {
     setHud(readHud(game))
     phaseRef.current = 'playing'
     setPhase('playing')
-    // First run (and first co-op run): a card with the controls.
-    if (!readStorage(count > 1 ? 'abc-seen-coop-controls' : 'abc-seen-controls')) {
+    // The first solo story run gets the tutorial; a first co-op run gets a card with both players' controls.
+    tutorialRef.current = null
+    setLesson(null)
+    if (modeRef.current === 'story' && count === 1 && !readStorage('abc-tutorial-done')) {
+      tutorialRef.current = startTutorial(game)
+      setLesson(0)
+    } else if (!readStorage(count > 1 ? 'abc-seen-coop-controls' : 'abc-seen-controls')) {
       controlsCardRef.current = true
       setControlsCard(true)
     }
@@ -273,9 +291,10 @@ export default function App() {
 
   // Keyboard (and gamepad menu presses, which arrive here as the keys they stand for).
   useEffect(() => {
-    const onKeyDown = (event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'>) => {
+    const onKeyDown = (event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'> & { fromPad?: boolean }) => {
       const game = gameRef.current
       unlockAudio()
+      markDevice(event.fromPad ? 'pad' : 'keys')
       if (GAME_KEYS.has(event.code) && game.phase === 'playing') event.preventDefault()
       if (game.phase === 'upgrade' && ['Space', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
 
@@ -382,7 +401,7 @@ export default function App() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [choosePlayers, closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
+  }, [markDevice, choosePlayers, closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
 
   useEffect(() => {
     if (phase === 'paused') showPauseView('menu')
@@ -465,8 +484,8 @@ export default function App() {
       for (const pad of pads) {
         for (const key of pad.menu) {
           if (game.phase === 'playing' && key !== 'Start') continue
-          if (key === 'Start' && game.phase !== 'playing' && game.phase !== 'paused') keyHandlerRef.current({ code: 'Enter', repeat: false, preventDefault: () => {} })
-          else keyHandlerRef.current({ code: key, repeat: false, preventDefault: () => {} })
+          if (key === 'Start' && game.phase !== 'playing' && game.phase !== 'paused') keyHandlerRef.current({ code: 'Enter', repeat: false, preventDefault: () => {}, fromPad: true })
+          else keyHandlerRef.current({ code: key, repeat: false, preventDefault: () => {}, fromPad: true })
         }
       }
 
@@ -483,7 +502,10 @@ export default function App() {
           input.down = keys.down || touching.down || pad.some((reading) => reading.down)
           input.jumpHeld = keys.jump || touching.jump || pad.some((reading) => reading.jump)
           for (const reading of pad) for (const action of reading.pressed) input.pressed.add(action)
-          if (pad.some((reading) => reading.pressed.size)) dismissControlsCard()
+          if (pad.some((reading) => reading.pressed.size || reading.left || reading.right)) {
+            dismissControlsCard()
+            markDevice('pad')
+          }
         }
         accumulator += dt
         let steps = 0
@@ -505,6 +527,16 @@ export default function App() {
 
       // Sounds, and a brief flash on the HUD icon of any rite that just cast itself.
       let flashChanged = false
+      // Tutorial lessons watch this frame's events before they're cleared.
+      const tutorial = tutorialRef.current
+      if (tutorial && game.phase === 'playing') {
+        if (advanceTutorial(tutorial, game, dt)) setLesson(tutorial.lesson)
+        if (tutorial.lesson >= LESSONS.length && tutorial.finished > 3.5) {
+          writeStorage('abc-tutorial-done', '1')
+          tutorialRef.current = null
+          setLesson(null)
+        }
+      }
       for (const sound of game.events) playSfx(sound)
       game.events.length = 0
       for (const cast of game.casts) {
@@ -579,6 +611,7 @@ export default function App() {
     onPointerDown: (event: ReactPointerEvent) => {
       event.preventDefault()
       unlockAudio()
+      markDevice('touch')
       event.currentTarget.setPointerCapture(event.pointerId)
       touchRef.current[key] = true
       if (action) press(action)
@@ -649,6 +682,13 @@ export default function App() {
         )}
 
         {playing && <SermonBanner wave={hud.wave} waveState={hud.waveState} curses={curses} mode={hud.mode} />}
+
+        {playing && lesson !== null && (
+          <div className="panel controls-card tutorial" key={lesson} aria-live="polite">
+            <span className="label accent">{lesson < LESSONS.length ? `First sermon · ${lesson + 1} of ${LESSONS.length}` : 'Ready'}</span>
+            <p>{lesson < LESSONS.length ? LESSONS[lesson].text[device] : 'You are ready. Refuse the Logos.'}</p>
+          </div>
+        )}
 
         {playing && controlsCard && !touch && (
           <div className="panel controls-card" aria-live="polite">
