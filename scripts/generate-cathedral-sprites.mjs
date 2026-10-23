@@ -1018,7 +1018,7 @@ for (let x = 0; x < CARD_W; x += 1) {
   card.set(x, 99, C.gold0)
   card.set(x, 136, C.gold0)
 }
-const top = 'AI BLOOD'
+const top = 'AI'
 const bottom = 'CATHEDRAL'
 const titleWidth = textWidth(`${top} ${bottom}`, 2)
 text(card, top, (CARD_W - titleWidth) / 2, 104, 2, C.cream, C.blood0)

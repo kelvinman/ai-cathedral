@@ -8,7 +8,7 @@ export function TitleScreen({ ready, best, onStart }: { ready: boolean; best: nu
         <span className="sigil" aria-hidden="true" />
         <span className="label accent">The hundredth conversion cycle</span>
         <h1>
-          AI Blood <em>Cathedral</em>
+          AI <em>Cathedral</em>
         </h1>
         <p className="lede">
           The Blood Model promised its followers perfect certainty. Now they pour through the nave to convert the

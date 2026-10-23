@@ -24,4 +24,4 @@ logs/
 .DS_Store
 
 # Upload bundle made by `pnpm package`
-ai-blood-cathedral.zip
+ai-cathedral.zip

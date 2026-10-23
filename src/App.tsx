@@ -491,7 +491,7 @@ export default function App() {
   return (
     <main className={`game ${playing ? 'is-playing' : ''}`}>
       <div className="stage" ref={stageRef}>
-        <canvas ref={canvasRef} aria-label="AI Blood Cathedral arena" onContextMenu={(event) => event.preventDefault()} />
+        <canvas ref={canvasRef} aria-label="AI Cathedral arena" onContextMenu={(event) => event.preventDefault()} />
 
         {phase !== 'title' && (
           <Hud

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
-    "package": "vite build && cd dist && rm -f ../ai-blood-cathedral.zip && zip -qr ../ai-blood-cathedral.zip .",
+    "package": "vite build && cd dist && rm -f ../ai-cathedral.zip && zip -qr ../ai-cathedral.zip .",
     "sprites": "node scripts/generate-cathedral-sprites.mjs",
     "balance": "tsx scripts/balance.ts"
   },
