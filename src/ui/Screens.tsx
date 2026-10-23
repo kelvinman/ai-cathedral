@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, type Curse, type Mode, type Upgrade, type WaveState } from '../game/engine'
+import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, upgrades, type Curse, type Mode, type Upgrade, type WaveState } from '../game/engine'
 import { LEDGER, type LedgerEntry, type LedgerState } from '../game/lore'
 import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
@@ -13,6 +13,7 @@ export function TitleScreen({
   endlessOpen,
   endlessFrom,
   deepestEndless,
+  difficulty,
   players,
   touch,
   selected,
@@ -28,6 +29,8 @@ export function TitleScreen({
   endlessOpen: boolean
   endlessFrom: number
   deepestEndless: number
+  /** The difficulty's name, when it isn't the default. */
+  difficulty?: string
   players: number
   /** Touch screens have no second set of keys, so co-op is keyboard and gamepad only. */
   touch: boolean
@@ -130,7 +133,7 @@ export function TitleScreen({
           <span className="label subtle">
             {[
               ledger.deepest > 5 && `Deepest · ${ARENAS[arenaForWave(ledger.deepest)].name}`,
-              best > 0 && `Best free will · ${best.toLocaleString()}`,
+              best > 0 && `Best free will${difficulty ? ` on ${difficulty}` : ''} · ${best.toLocaleString()}`,
               deepestEndless > 0 && `Endless · Sermon ${deepestEndless}`,
             ]
               .filter(Boolean)
@@ -331,6 +334,67 @@ export function ControlsPage({ players, pad, onBack }: { players: number; pad: b
   )
 }
 
+/** The counter-doctrines taken this run, in the order they were first chosen. */
+const taken = (levels: Record<string, number>) =>
+  Object.entries(levels).flatMap(([id, level]) => {
+    const upgrade = upgrades.find((candidate) => candidate.id === id)
+    return upgrade && level > 0 ? [{ upgrade, level }] : []
+  })
+
+/** A compact row of the doctrines taken so far, for the upgrade and results screens. */
+export function DoctrineChips({ levels }: { levels: Record<string, number> }) {
+  const list = taken(levels)
+  if (!list.length) return null
+  return (
+    <div className="doctrine-chips">
+      <span className="label">Your doctrines</span>
+      <ul>
+        {list.map(({ upgrade, level }) => (
+          <li key={upgrade.id} className={upgrade.rare ? 'is-rare' : ''}>
+            {upgrade.title}
+            {upgrade.max > 1 && <span> {romanLevel(level)}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+const romanLevel = (level: number) => ['', 'I', 'II', 'III', 'IV', 'V', 'VI'][level] ?? String(level)
+
+/** Pause → Doctrines: everything taken this run, with what it does. */
+export function DoctrinesPage({ levels, onBack }: { levels: Record<string, number>; onBack: () => void }) {
+  const list = taken(levels)
+  return (
+    <div className="panel controls-panel doctrines-panel">
+      <span className="label accent">Paused</span>
+      <h2>Doctrines</h2>
+      {list.length ? (
+        <ul className="doctrine-list">
+          {list.map(({ upgrade, level }) => (
+            <li key={upgrade.id} className={upgrade.rare ? 'is-rare' : ''}>
+              <span className="label">{upgrade.eyebrow}</span>
+              <strong>{upgrade.title}</strong>
+              <p>{upgrade.description}</p>
+              {upgrade.cost && <p className="cost">{upgrade.cost}</p>}
+              <span className="pips" aria-label={`Level ${level} of ${upgrade.max}`}>
+                {Array.from({ length: upgrade.max }, (_, pip) => (
+                  <i key={pip} className={pip < level ? 'is-on' : ''} />
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="lede">None yet. Survive a sermon to choose your first counter-doctrine.</p>
+      )}
+      <button type="button" tabIndex={-1} className="secondary is-selected" onClick={onBack}>
+        Back <kbd data-pad="B">Esc</kbd>
+      </button>
+    </div>
+  )
+}
+
 export function UpgradeScreen({
   wave,
   offers,
@@ -376,6 +440,7 @@ export function UpgradeScreen({
             )
           })}
         </div>
+        <DoctrineChips levels={levels} />
         <p className="choose-hint">
           <kbd data-pad="←">←</kbd>
           <kbd data-pad="→">→</kbd> choose · <kbd data-pad="A">Space</kbd> confirm
@@ -385,7 +450,17 @@ export function UpgradeScreen({
   )
 }
 
-export type RunSummary = { wave: number; kills: number; bestCombo: number; score: number; by: string; mode: Mode; players: number }
+export type RunSummary = {
+  wave: number
+  kills: number
+  bestCombo: number
+  score: number
+  by: string
+  mode: Mode
+  players: number
+  /** The difficulty's name, when it isn't the default. */
+  difficulty?: string
+}
 
 export function ResultsScreen({
   won,
@@ -394,6 +469,7 @@ export function ResultsScreen({
   newBest,
   epitaph,
   earned,
+  levels,
   onRestart,
   onTitle,
 }: {
@@ -405,6 +481,8 @@ export function ResultsScreen({
   epitaph: string
   /** Ledger pages this run unlocked. */
   earned: LedgerEntry[]
+  /** The doctrines the run ended with. */
+  levels: Record<string, number>
   onRestart: () => void
   onTitle: () => void
 }) {
@@ -442,7 +520,8 @@ export function ResultsScreen({
             <dd>{summary.score.toLocaleString()}</dd>
           </div>
         </dl>
-        {newBest ? <span className="badge">New best</span> : <span className="label subtle">Best · {best.toLocaleString()}</span>}
+        {newBest ? <span className="badge">New best</span> : <span className="label subtle">Best{summary.difficulty ? ` on ${summary.difficulty}` : ''} · {best.toLocaleString()}</span>}
+        <DoctrineChips levels={levels} />
         {earned.length > 0 && (
           <p className="ledger-earned">
             <span className="label accent">New in the Ledger</span>

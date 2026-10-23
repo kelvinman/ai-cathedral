@@ -5,6 +5,7 @@ import {
   H,
   MAX_WAVE,
   W,
+  DIFFICULTIES,
   arenaForWave,
   chooseUpgrade,
   isEliteWave,
@@ -16,6 +17,7 @@ import {
   type AbilityKey,
   type Action,
   type Curse,
+  type Difficulty,
   type Game,
   type Input,
   type Mode,
@@ -30,6 +32,7 @@ import { Hud, SpokenLine, readHud, type HudState } from './ui/Hud'
 import {
   ControlsPage,
   CreditsPage,
+  DoctrinesPage,
   LedgerScreen,
   MenuPanel,
   ResultsScreen,
@@ -55,9 +58,12 @@ const newInput = (): Input => ({ left: false, right: false, down: false, jumpHel
 /** Endless opens up once a run has reached the Arch-Deacon's second visit. */
 const ENDLESS_FROM = 10
 /** Best score is kept per mode; endless also remembers its deepest sermon. */
-const bestKey = (mode: Mode) => (mode === 'endless' ? 'abc-best-endless' : 'abc-best')
+/** Best scores are kept per mode and difficulty (Apostate keeps the original keys). */
+const bestKey = (mode: Mode, difficulty: Difficulty) =>
+  (mode === 'endless' ? 'abc-best-endless' : 'abc-best') + (difficulty === 'apostate' ? '' : `-${difficulty}`)
+const DIFFICULTY_ORDER: Difficulty[] = ['doubter', 'apostate', 'heretic']
 
-type PauseView = 'menu' | 'controls' | 'settings' | 'keys' | 'extras' | 'credits'
+type PauseView = 'menu' | 'controls' | 'doctrines' | 'settings' | 'keys' | 'extras' | 'credits'
 type Settings = {
   music: number
   effects: number
@@ -65,13 +71,15 @@ type Settings = {
   calm: boolean
   largeText: boolean
   danger: 'red' | 'yellow'
+  difficulty: Difficulty
 }
 
 function loadSettings(): Settings {
   const prefersCalm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const defaults: Settings = { music: 0.6, effects: 0.8, shake: !prefersCalm, calm: prefersCalm, largeText: false, danger: 'red' }
+  const defaults: Settings = { music: 0.6, effects: 0.8, shake: !prefersCalm, calm: prefersCalm, largeText: false, danger: 'red', difficulty: 'apostate' }
   try {
-    return { ...defaults, ...(JSON.parse(readStorage('abc-settings') ?? '{}') as Partial<Settings>) }
+    const saved = { ...defaults, ...(JSON.parse(readStorage('abc-settings') ?? '{}') as Partial<Settings>) }
+    return saved.difficulty in DIFFICULTIES ? saved : { ...saved, difficulty: 'apostate' }
   } catch {
     return defaults
   }
@@ -131,7 +139,8 @@ export default function App() {
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: W, height: H })
   const heldRef = useRef(new Set<string>())
   const touchRef = useRef({ left: false, right: false, down: false, jump: false })
-  const dpadPointerRef = useRef<number | null>(null)
+  const stickPointerRef = useRef<number | null>(null)
+  const stickOriginRef = useRef<{ x: number; y: number } | null>(null)
   const inputsRef = useRef<Input[]>([newInput(), newInput()])
   const phaseRef = useRef<Phase>('title')
   // Chosen on the title screen: story or endless, one player or two.
@@ -151,17 +160,17 @@ export default function App() {
   const seenRitesRef = useRef<Set<string>>(new Set(JSON.parse(readStorage('abc-seen-rites') ?? '[]') as string[]))
   const [offers, setOffers] = useState<Upgrade[]>([])
   const [levels, setLevels] = useState<Record<string, number>>({})
-  const [best, setBest] = useState(() => Number(readStorage('abc-best') ?? 0))
+  const [best, setBest] = useState(() => Number(readStorage(bestKey('story', loadSettings().difficulty)) ?? 0))
   const [deepestEndless, setDeepestEndless] = useState(() => Number(readStorage('abc-deep-endless') ?? 0))
   const [newBest, setNewBest] = useState(false)
   const [ready, setReady] = useState(false)
   const [touch, setTouch] = useState(false)
-  const [portrait, setPortrait] = useState(false)
-  /** Which d-pad arrows are lit (u, d, l, r), for the upright touch layout. */
-  const [dpad, setDpad] = useState('')
+  /** Where the thumb stick's knob sits, in pixels from its centre. */
+  const [stick, setStick] = useState({ x: 0, y: 0 })
   const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '', mode: 'story', players: 1 })
   const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
   const [settings, setSettings] = useState<Settings>(loadSettings)
+  const difficultyRef = useRef(settings.difficulty)
 
   // Story: the line being spoken, and the Ledger of lore pages kept between runs.
   const [ledger, setLedger] = useState<LedgerState>(loadLedger)
@@ -314,24 +323,17 @@ export default function App() {
     setShakeEnabled(settings.shake)
     setReducedFlashing(settings.calm)
     setDangerColor(settings.danger)
+    difficultyRef.current = settings.difficulty
     writeStorage('abc-muted', muted ? '1' : '0')
     writeStorage('abc-settings', JSON.stringify(settings))
   }, [muted, settings])
 
   useEffect(() => {
     const query = window.matchMedia('(pointer: coarse)')
-    const upright = window.matchMedia('(orientation: portrait)')
-    const update = () => {
-      setTouch(query.matches)
-      setPortrait(upright.matches)
-    }
+    const update = () => setTouch(query.matches)
     update()
     query.addEventListener('change', update)
-    upright.addEventListener('change', update)
-    return () => {
-      query.removeEventListener('change', update)
-      upright.removeEventListener('change', update)
-    }
+    return () => query.removeEventListener('change', update)
   }, [])
 
   const goTo = useCallback((next: Phase) => {
@@ -350,7 +352,7 @@ export default function App() {
     }
     // Touch screens have one set of controls, so they always play alone.
     const count = window.matchMedia('(pointer: coarse)').matches ? 1 : playersRef.current
-    const game = makeGame({ mode: modeRef.current, players: count })
+    const game = makeGame({ mode: modeRef.current, players: count, difficulty: difficultyRef.current })
     setCurtain((value) => value + 1)
     game.phase = 'playing'
     startWave(game)
@@ -360,7 +362,7 @@ export default function App() {
     for (const input of inputsRef.current) input.pressed.clear()
     setLevels({})
     setNewBest(false)
-    setBest(Number(readStorage(bestKey(modeRef.current)) ?? 0))
+    setBest(Number(readStorage(bestKey(modeRef.current, game.difficulty)) ?? 0))
     setCurses(game.curses)
     setHud(readHud(game))
     phaseRef.current = 'playing'
@@ -500,7 +502,7 @@ export default function App() {
 
       if (game.phase === 'paused' || (game.phase === 'title' && optionsOpenRef.current)) {
         const view = pauseViewRef.current
-        const pageOnly = view === 'controls' || view === 'credits'
+        const pageOnly = view === 'controls' || view === 'doctrines' || view === 'credits'
         if (pageOnly || (view !== 'menu' && (event.code === 'Escape' || event.code === 'Backspace'))) {
           if (['Escape', 'Enter', 'Space', 'Backspace'].includes(event.code)) {
             event.preventDefault()
@@ -763,7 +765,16 @@ export default function App() {
         }
         if (game.phase === 'dead' || game.phase === 'won') {
           setCurtain((value) => value + 1)
-          setSummary({ wave: game.wave, kills: game.kills, bestCombo: game.bestCombo, score: game.score, by: game.lastHurtBy, mode: game.mode, players: count })
+          setSummary({
+            wave: game.wave,
+            kills: game.kills,
+            bestCombo: game.bestCombo,
+            score: game.score,
+            by: game.lastHurtBy,
+            mode: game.mode,
+            players: count,
+            difficulty: game.difficulty === 'apostate' ? undefined : DIFFICULTIES[game.difficulty].name,
+          })
           if (game.mode === 'endless' && game.wave > Number(readStorage('abc-deep-endless') ?? 0)) {
             writeStorage('abc-deep-endless', String(game.wave))
             setDeepestEndless(game.wave)
@@ -773,9 +784,9 @@ export default function App() {
           const result = recordRun(ledgerRef.current, run)
           saveLedger(result.state)
           setEarned(result.earned)
-          const previous = Number(readStorage(bestKey(game.mode)) ?? 0)
+          const previous = Number(readStorage(bestKey(game.mode, game.difficulty)) ?? 0)
           if (game.score > previous) {
-            writeStorage(bestKey(game.mode), String(game.score))
+            writeStorage(bestKey(game.mode, game.difficulty), String(game.score))
             setBest(game.score)
             setNewBest(true)
           }
@@ -826,53 +837,59 @@ export default function App() {
     },
   })
 
-  // The d-pad held upright reads where the thumb is from its centre, so sliding into a
-  // diagonal jumps while moving. Up jumps, down drops through a ledge.
-  const steerTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const dx = event.clientX - (rect.left + rect.width / 2)
-    const dy = event.clientY - (rect.top + rect.height / 2)
+  // The thumb stick: sliding sideways runs, pulling down drops through a ledge. It steers
+  // from where the thumb first landed, so it works wherever on the pad a thumb comes down.
+  const steerStick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const origin = stickOriginRef.current
+    if (!origin) return
+    const reach = event.currentTarget.getBoundingClientRect().width * 0.3
+    let dx = event.clientX - origin.x
+    let dy = event.clientY - origin.y
+    const length = Math.hypot(dx, dy)
+    if (length > reach) {
+      dx = (dx / length) * reach
+      dy = (dy / length) * reach
+    }
     const touching = touchRef.current
-    const wasUp = touching.jump
     const wasDown = touching.down
-    const still = Math.hypot(dx, dy) < rect.width * 0.12
-    // Eight 45° sectors: a direction is held when the thumb is within 67.5° of it.
-    const angle = Math.atan2(dy, dx)
-    const near = (target: number) => !still && Math.abs(Math.atan2(Math.sin(angle - target), Math.cos(angle - target))) < Math.PI * 0.375
-    touching.right = near(0)
-    touching.left = near(Math.PI)
-    touching.down = near(Math.PI / 2)
-    touching.jump = near(-Math.PI / 2)
-    if (touching.jump && !wasUp) press('jump')
+    touching.left = dx < -reach * 0.25
+    touching.right = dx > reach * 0.25
+    // Down only when the pull is mostly downward, so running never drops by accident.
+    touching.down = dy > reach * 0.55 && dy > Math.abs(dx)
     if (touching.down && !wasDown) press('down')
-    setDpad((touching.jump ? 'u' : '') + (touching.down ? 'd' : '') + (touching.left ? 'l' : '') + (touching.right ? 'r' : ''))
+    setStick({ x: Math.round(dx), y: Math.round(dy) })
   }
-  const releaseDpad = (event: ReactPointerEvent) => {
-    if (event.pointerId !== dpadPointerRef.current) return
-    dpadPointerRef.current = null
-    touchRef.current = { left: false, right: false, down: false, jump: false }
-    setDpad('')
+  const releaseStick = (event: ReactPointerEvent) => {
+    if (event.pointerId !== stickPointerRef.current) return
+    stickPointerRef.current = null
+    stickOriginRef.current = null
+    Object.assign(touchRef.current, { left: false, right: false, down: false })
+    setStick({ x: 0, y: 0 })
   }
-  const dpadTouch = {
+  const stickTouch = {
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
       event.preventDefault()
       unlockAudio()
       markDevice('touch')
-      dpadPointerRef.current = event.pointerId
+      stickPointerRef.current = event.pointerId
+      // From the pad's centre, so a thumb landing off-centre already steers that way.
+      const rect = event.currentTarget.getBoundingClientRect()
+      stickOriginRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       // Keeps the thumb steering when it slides off the pad.
       event.currentTarget.setPointerCapture(event.pointerId)
-      steerTouch(event)
+      steerStick(event)
     },
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.pointerId === dpadPointerRef.current) steerTouch(event)
+      if (event.pointerId === stickPointerRef.current) steerStick(event)
     },
-    onPointerUp: releaseDpad,
-    onPointerCancel: releaseDpad,
+    onPointerUp: releaseStick,
+    onPointerCancel: releaseStick,
   }
 
   const pauseItems: MenuItem[] = [
     { label: 'Resume', key: 'Esc', style: 'primary', run: () => goTo('playing') },
     { label: 'Restart', key: 'R', style: 'secondary', run: startGame },
+    { label: 'Doctrines', key: '', style: 'secondary', run: () => showPauseView('doctrines') },
     { label: 'Controls', key: '', style: 'secondary', run: () => showPauseView('controls') },
     { label: 'Settings', key: '', style: 'secondary', run: () => showPauseView('settings') },
     { label: 'Quit to title', key: '', style: 'ghost', run: () => goTo('title') },
@@ -881,7 +898,20 @@ export default function App() {
     setMuted(false)
     setSettings((current) => ({ ...current, ...patch }))
   }
+  const shiftDifficulty = (delta: number) => {
+    const index = DIFFICULTY_ORDER.indexOf(settings.difficulty)
+    change({ difficulty: DIFFICULTY_ORDER[(index + delta + DIFFICULTY_ORDER.length) % DIFFICULTY_ORDER.length] })
+  }
+  // A run keeps the difficulty it started on; a change mid-run applies to the next.
+  const midRun = phase === 'paused' && gameRef.current.difficulty !== settings.difficulty
   const settingsItems: MenuItem[] = [
+    {
+      label: `◀ Difficulty: ${DIFFICULTIES[settings.difficulty].name}${midRun ? ' (next run)' : ''} ▶`,
+      key: '',
+      style: 'secondary',
+      run: () => shiftDifficulty(1),
+      adjust: shiftDifficulty,
+    },
     {
       label: `◀ Music ${percent(muted ? 0 : settings.music)} ▶`,
       key: '',
@@ -1024,46 +1054,18 @@ export default function App() {
         {/* After the controls card, so CSS can move the line clear of it. */}
         {(playing || phase === 'paused') && line && <SpokenLine key={line.id} line={line} paused={!playing} />}
 
-        {touch && playing && portrait && (
+        {touch && playing && (
           <div className="touch-controls">
-            <div className="touch-dpad" role="group" aria-label="Move, jump and drop" {...dpadTouch}>
-              {(['u', 'l', 'r', 'd'] as const).map((arrow) => (
-                <span key={arrow} className={`touch-button dpad-${arrow} ${dpad.includes(arrow) ? 'is-held' : ''}`} aria-hidden="true">
-                  {{ u: '▲', l: '◀', r: '▶', d: '▼' }[arrow]}
-                </span>
-              ))}
+            <div className="touch-stick" role="group" aria-label="Move, and pull down to drop" {...stickTouch}>
+              <span className="stick-arrow is-left" aria-hidden="true">◀</span>
+              <span className="stick-arrow is-right" aria-hidden="true">▶</span>
+              <span className="stick-arrow is-down" aria-hidden="true">▼</span>
+              <span className="stick-knob" aria-hidden="true" style={{ translate: `${stick.x}px ${stick.y}px` }} />
             </div>
-            <button
-              type="button"
-              className="touch-button is-large is-dash"
-              aria-label="Dash"
-              onPointerDown={(event) => {
-                event.preventDefault()
-                unlockAudio()
-                press('dash')
-              }}
-            >
-              Dash
-            </button>
-          </div>
-        )}
-        {touch && playing && !portrait && (
-          <div className="touch-controls">
-            <div className="touch-pad">
-              <button type="button" className="touch-button" aria-label="Move left" {...holdTouch('left')}>
-                ◀
-              </button>
-              <button type="button" className="touch-button" aria-label="Drop down" {...holdTouch('down', 'down')}>
-                ▼
-              </button>
-              <button type="button" className="touch-button" aria-label="Move right" {...holdTouch('right')}>
-                ▶
-              </button>
-            </div>
-            <div className="touch-pad">
+            <div className="touch-actions">
               <button
                 type="button"
-                className="touch-button is-large"
+                className="touch-button is-large is-dash"
                 aria-label="Dash"
                 onPointerDown={(event) => {
                   event.preventDefault()
@@ -1073,7 +1075,7 @@ export default function App() {
               >
                 Dash
               </button>
-              <button type="button" className="touch-button is-large" aria-label="Jump" {...holdTouch('jump', 'jump')}>
+              <button type="button" className="touch-button is-large is-jump" aria-label="Jump" {...holdTouch('jump', 'jump')}>
                 Jump
               </button>
             </div>
@@ -1083,11 +1085,12 @@ export default function App() {
         {phase === 'title' && !ledgerOpen && (
           <TitleScreen
             ready={ready}
-            best={Number(readStorage('abc-best') ?? 0)}
+            best={Number(readStorage(bestKey('story', settings.difficulty)) ?? 0)}
             ledger={ledger}
             endlessOpen={endlessOpen}
             endlessFrom={ENDLESS_FROM}
             deepestEndless={deepestEndless}
+            difficulty={settings.difficulty === 'apostate' ? undefined : DIFFICULTIES[settings.difficulty].name}
             players={players}
             touch={touch}
             selected={titleItem}
@@ -1105,6 +1108,7 @@ export default function App() {
         {(phase === 'paused' || (phase === 'title' && optionsOpen)) && (
           <div className="overlay">
             {pauseView === 'controls' && <ControlsPage players={hud.players.length} pad={device === 'pad'} onBack={menuBack} />}
+            {pauseView === 'doctrines' && <DoctrinesPage levels={levels} onBack={menuBack} />}
             {pauseView === 'keys' && (
               <MenuPanel kicker="Settings" title="Keys" items={keysItems} index={pauseIndex} onSelect={selectPause} hint="choose · Enter rebind" dense />
             )}
@@ -1148,6 +1152,7 @@ export default function App() {
             newBest={newBest}
             epitaph={lastWord}
             earned={earned}
+            levels={levels}
             onRestart={() => startGame()}
             onTitle={() => goTo('title')}
           />

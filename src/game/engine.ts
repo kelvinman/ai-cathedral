@@ -10,6 +10,16 @@ export const MAX_WAVE = 20
 export type Phase = 'title' | 'playing' | 'paused' | 'upgrade' | 'dead' | 'won'
 /** Story ends with the Logos at sermon 20; endless keeps going, chapter after chapter. */
 export type Mode = 'story' | 'endless'
+export type Difficulty = 'doubter' | 'apostate' | 'heretic'
+
+/** How hard a run is, set before it starts. Apostate is the game as balanced; the others
+ *  scale follower health, the damage you take, how many come each sermon, and how often
+ *  bosses act (below 1 is faster). */
+export const DIFFICULTIES: Record<Difficulty, { name: string; hint: string; hp: number; damage: number; count: number; bossPace: number }> = {
+  doubter: { name: 'Doubter', hint: 'Fewer, weaker followers. They hit softer.', hp: 0.8, damage: 0.7, count: 0.85, bossPace: 1.15 },
+  apostate: { name: 'Apostate', hint: 'The game as it was made.', hp: 1, damage: 1, count: 1, bossPace: 1 },
+  heretic: { name: 'Heretic', hint: 'More, tougher followers. They hit harder.', hp: 1.2, damage: 1.25, count: 1.1, bossPace: 0.85 },
+}
 export type WaveState = 'intro' | 'fight' | 'cleared'
 export type EnemyKind = 'acolyte' | 'zealot' | 'bishop' | 'wisp'
 export type AbilityKey = 'dash' | 'seal' | 'volley' | 'mirror' | 'glyph'
@@ -264,6 +274,7 @@ export type Input = {
 export type Game = {
   phase: Phase
   mode: Mode
+  difficulty: Difficulty
   time: number
   /** Player one; the same object as players[0]. */
   player: Player
@@ -510,6 +521,9 @@ export const BALANCE = {
   spit: { damage: 12, speed: 300, every: [2.0, 3.2] as const, range: 560 },
   /** Couch co-op: more followers, each a little tougher, for twice the firepower. */
   coop: { count: 1.5, hp: 1.25 },
+  /** Bosses: health as a multiple of their follower type (doubled again in co-op, where two
+   *  quills share the fight), seconds between moves, and how much faster they move below half. */
+  boss: { hp: 6.5, finalHp: 15, coopHp: 2, every: [3, 4] as const, finalEvery: [2.6, 3.4] as const, enraged: 0.65 },
   /** Hype Bishops lob slow promises: easy to see coming, but they hurt. */
   promise: { damage: 8, speed: 170, every: [5, 7] as const, range: 480 },
 }
@@ -831,11 +845,16 @@ function makePlayer(index: number, x: number): Player {
 /** Where players stand at the start of a sermon or on arriving in an arena. */
 const startX = (index: number, count: number) => (count > 1 ? W / 2 + (index ? 50 : -50) : W / 2)
 
-export function makeGame({ mode = 'story', players = 1 }: { mode?: Mode; players?: number } = {}): Game {
+export function makeGame({
+  mode = 'story',
+  players = 1,
+  difficulty = 'apostate',
+}: { mode?: Mode; players?: number; difficulty?: Difficulty } = {}): Game {
   const team = Array.from({ length: players }, (_, index) => makePlayer(index, startX(index, players)))
   return {
     phase: 'title',
     mode,
+    difficulty,
     time: 0,
     player: team[0],
     players: team,
@@ -1012,7 +1031,7 @@ function nearestPlayer(g: Game, from: Point) {
 
 function hurtPlayer(g: Game, p: Player, amount: number, fromX: number, by: string) {
   if (p.down || p.invuln > 0 || p.dashTime > 0 || p.shield > 0) return
-  amount = Math.round(amount * g.stats.damageTaken)
+  amount = Math.max(1, Math.round(amount * g.stats.damageTaken * DIFFICULTIES[g.difficulty].damage))
   p.hp -= amount
   p.hurtTime = 0.3
   g.lastHurtBy = by
@@ -1137,7 +1156,12 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
   // The final sermon's boss is the Logos itself, in a giant body.
   const final = mark.elite && isFinalWave(g.wave)
   const eliteScale = final ? 1.9 : mark.elite ? 1.45 : 1
-  const hp = base.hp * hpScale * (final ? 14 : mark.elite ? 5 : 1) * (g.players.length > 1 ? BALANCE.coop.hp : 1)
+  const coop = g.players.length > 1
+  const hp =
+    DIFFICULTIES[g.difficulty].hp *
+    (mark.elite
+      ? base.hp * hpScale * (final ? BALANCE.boss.finalHp : BALANCE.boss.hp) * (coop ? BALANCE.boss.coopHp : 1)
+      : base.hp * hpScale * (coop ? BALANCE.coop.hp : 1))
   g.enemies.push({
     id: g.nextId++,
     kind: mark.kind,
@@ -1212,7 +1236,7 @@ export function startWave(g: Game) {
   g.waveState = 'intro'
   g.waveTimer = 2.2
   // Two players face a bigger congregation.
-  g.waveTotal = Math.round(waveTotal(g.wave) * (g.players.length > 1 ? BALANCE.coop.count : 1))
+  g.waveTotal = Math.max(1, Math.round(waveTotal(g.wave) * (g.players.length > 1 ? BALANCE.coop.count : 1) * DIFFICULTIES[g.difficulty].count))
   g.spawned = 0
   g.waveKills = 0
   g.spawnTimer = 0.2
@@ -1705,13 +1729,14 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
   e.bossTimer -= dt
   if (e.bossTimer > 0 || !e.onGround) return
   // The Arch-Deacon slams, throws its wrench, and recompiles followers; the Logos speaks,
-  // hallucinates, leaps, and rains its words down from above. Below half health the Logos
-  // stops pausing to think.
+  // hallucinates, leaps, and rains its words down from above. Below half health both stop
+  // pausing to think.
   const moves = final ? ['volley', 'summon', 'slam', 'rain'] : ['slam', 'wrench', 'slam', 'recompile']
   const move = moves[e.bossMove % moves.length]
   e.bossMove += 1
-  const enraged = final && e.hp < e.maxHp * 0.5
-  e.bossTimer = (final ? rand(3, 4) : rand(4.5, 6)) * (enraged ? 0.65 : 1)
+  const enraged = e.hp < e.maxHp * 0.5
+  const every = final ? BALANCE.boss.finalEvery : BALANCE.boss.every
+  e.bossTimer = rand(every[0], every[1]) * (enraged ? BALANCE.boss.enraged : 1) * DIFFICULTIES[g.difficulty].bossPace
   const from = chest(e)
   if (move === 'slam') {
     e.bossCharge = final ? 1.1 : 0.9
@@ -1737,18 +1762,21 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
     burst(g, from.x, from.y, '#e43b44', 16, 260, { glow: true, size: 3 })
     g.events.push('spit')
   } else if (move === 'wrench') {
-    // Thrown in a high arc that lands where the player is standing.
+    // Thrown in a high arc that lands where a player is standing: one at each in co-op.
     const airtime = 1.1
-    g.spits.push({
-      x: from.x,
-      y: from.y - 20,
-      vx: (p.x - from.x) / airtime,
-      vy: (p.y - 20 - (from.y - 20)) / airtime - (WRENCH_GRAVITY * airtime) / 2,
-      life: 3,
-      kind: 'wrench',
-      damage: Math.round(BALANCE.spit.damage * 1.5 * (1 + (g.wave - 1) * 0.03)),
-      by: ELITE_TITLE,
-    })
+    const standing = g.players.filter((player) => !player.down)
+    for (const target of standing.length ? standing : [p]) {
+      g.spits.push({
+        x: from.x,
+        y: from.y - 20,
+        vx: (target.x - from.x) / airtime,
+        vy: (target.y - 20 - (from.y - 20)) / airtime - (WRENCH_GRAVITY * airtime) / 2,
+        life: 3,
+        kind: 'wrench',
+        damage: Math.round(BALANCE.spit.damage * 1.5 * (1 + (g.wave - 1) * 0.03)),
+        by: ELITE_TITLE,
+      })
+    }
     floatText(g, e.x, e.y - e.h - 34, 'CATCH.', '#f2b04a', 22)
     g.events.push('spit')
   } else if (move === 'recompile') {

@@ -10,6 +10,9 @@ type Lesson = {
   text: Record<Device, string>
   /** Done once the player has done it (or, for lessons that only explain, after a while). */
   done: (seen: Seen) => boolean
+  /** Moves on anyway after this many seconds, so a lesson the moment doesn't allow (no
+   *  followers to crowd you, no ledge nearby) never holds the tutorial up. */
+  patience: number
 }
 
 /** What has happened since the lesson started. */
@@ -23,8 +26,9 @@ export type Seen = {
 
 export const LESSONS: Lesson[] = [
   {
-    text: { keys: 'Move with A and D, or the arrow keys.', pad: 'Move with the left stick.', touch: 'Move with ◀ and ▶.' },
+    text: { keys: 'Move with A and D, or the arrow keys.', pad: 'Move with the left stick.', touch: 'Slide the stick on the left to move.' },
     done: (seen) => seen.moved > 120,
+    patience: 15,
   },
   {
     text: {
@@ -33,10 +37,12 @@ export const LESSONS: Lesson[] = [
       touch: 'Tap Jump, and again in the air to jump twice.',
     },
     done: (seen) => seen.events.has('airjump'),
+    patience: 15,
   },
   {
-    text: { keys: 'On a ledge, press S to drop through it.', pad: 'On a ledge, press down to drop through it.', touch: 'On a ledge, tap ▼ to drop through it.' },
+    text: { keys: 'On a ledge, press S to drop through it.', pad: 'On a ledge, press down to drop through it.', touch: 'On a ledge, pull the stick down to drop through it.' },
     done: (seen) => seen.dropped,
+    patience: 20,
   },
   {
     text: {
@@ -45,6 +51,7 @@ export const LESSONS: Lesson[] = [
       touch: 'Your quill writes on its own, at the nearest follower. Your job is to stay alive.',
     },
     done: (seen) => seen.seconds > 6,
+    patience: 6,
   },
   {
     text: {
@@ -53,14 +60,17 @@ export const LESSONS: Lesson[] = [
       touch: 'Let them close in: your rites cast themselves when followers crowd you.',
     },
     done: (seen) => seen.casts.size > 0 && seen.seconds > 2,
+    patience: 14,
   },
   {
     text: { keys: 'Step into a gate to come out of its twin.', pad: 'Step into a gate to come out of its twin.', touch: 'Step into a gate to come out of its twin.' },
     done: (seen) => seen.events.has('portal'),
+    patience: 20,
   },
   {
     text: { keys: 'Dash through danger with Shift.', pad: 'Dash through danger with B.', touch: 'Tap Dash to slip through danger.' },
     done: (seen) => seen.casts.has('dash'),
+    patience: 15,
   },
 ]
 
@@ -83,7 +93,8 @@ export function advanceTutorial(t: Tutorial, g: Game, dt: number) {
   if (p.dropTimer > 0) t.seen.dropped = true
   for (const event of g.events) t.seen.events.add(event)
   for (const cast of g.casts) if (cast.player === 0) t.seen.casts.add(cast.ability)
-  if (!LESSONS[t.lesson].done(t.seen)) return false
+  const lesson = LESSONS[t.lesson]
+  if (!lesson.done(t.seen) && t.seen.seconds < lesson.patience) return false
   t.lesson += 1
   t.seen = freshSeen()
   return true

@@ -1338,21 +1338,109 @@
   animation: blink 0.6s steps(1) infinite;
 }
 
+/* ---------- Doctrines: the counter-doctrines taken this run ---------- */
+
+.doctrine-chips {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.doctrine-chips ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doctrine-chips li {
+  padding: 1px 8px 2px;
+  border: 2px solid var(--ink);
+  background: var(--wood0);
+  font-family: var(--pixel);
+  font-size: 17px;
+  line-height: 1.1;
+  color: var(--stone4);
+}
+
+.doctrine-chips li span,
+.doctrine-chips li.is-rare {
+  color: var(--gold1);
+}
+
+.doctrine-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-height: min(56vh, 460px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  text-align: left;
+}
+
+.doctrine-list li {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 2px solid var(--ink);
+  background: var(--wood0);
+}
+
+.doctrine-list li.is-rare {
+  box-shadow: inset 0 0 0 var(--px) var(--gold0);
+}
+
+.doctrine-list li.is-rare .label {
+  color: var(--gold1);
+}
+
+.doctrine-list strong {
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--cream);
+}
+
+.doctrine-list p {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 17px;
+  line-height: 1.1;
+  color: var(--stone4);
+}
+
+.doctrine-list .cost {
+  color: var(--blood3);
+}
+
+.doctrine-list .pips {
+  padding-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .doctrine-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Touch ---------- */
 
 .touch-controls {
   position: absolute;
   inset: auto 0 24px;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
   padding: 0 max(16px, env(safe-area-inset-left));
   pointer-events: none;
-}
-
-.touch-pad {
-  display: flex;
-  gap: 8px;
-  pointer-events: auto;
 }
 
 .touch-button {
@@ -1385,46 +1473,84 @@
   border-image-source: url('./assets/ui/button-down.png');
 }
 
-/* Phones held upright: the arena sits above the controls (the camera leaves the bottom
-   band clear), so there's room for a full d-pad on the left and Dash on its own. */
-.touch-dpad {
-  display: none;
+/* The thumb stick: a sunken stone dish with a knob that follows the thumb. */
+.touch-stick {
+  --stick: 132px;
+  position: relative;
+  display: grid;
+  width: var(--stick);
+  height: var(--stick);
+  place-items: center;
+  border: 4px solid var(--ink);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(58, 68, 102, 0.55) 0 55%, rgba(24, 20, 37, 0.7) 56%);
+  box-shadow: inset 0 0 0 3px rgba(139, 155, 180, 0.35);
+  pointer-events: auto;
+  touch-action: none;
 }
 
+.stick-arrow {
+  position: absolute;
+  font-size: 13px;
+  color: var(--stone4);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.stick-arrow.is-left { left: 10px; }
+.stick-arrow.is-right { right: 10px; }
+.stick-arrow.is-down { bottom: 6px; }
+
+.stick-knob {
+  width: 44%;
+  height: 44%;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: #5a6988;
+  box-shadow: inset 0 4px 0 #8b9bb4, inset 0 -4px 0 #3a4466;
+  pointer-events: none;
+}
+
+/* Jump and Dash under the right thumb, staggered like a pad's face buttons: Jump, the
+   one pressed most, sits lowest and largest. */
+.touch-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.touch-button.is-dash {
+  margin-bottom: 34px;
+}
+
+.touch-button.is-jump {
+  width: 86px;
+  height: 86px;
+}
+
+/* Phones held upright: the arena sits above the controls (the camera leaves the bottom
+   band clear), so the controls can be full size and solid. */
 @media (orientation: portrait) and (pointer: coarse) {
   .touch-controls {
     inset: auto 0 max(16px, env(safe-area-inset-bottom));
-    align-items: center;
+    align-items: flex-end;
     padding: 0 20px;
   }
 
-  .touch-dpad {
-    --cell: min(54px, 14vw);
-    display: grid;
-    grid-template: repeat(3, var(--cell)) / repeat(3, var(--cell));
-    pointer-events: auto;
-    touch-action: none;
+  .touch-stick {
+    --stick: min(150px, 38vw);
   }
-
-  .touch-dpad .touch-button {
-    width: var(--cell);
-    height: var(--cell);
-    pointer-events: none;
-  }
-
-  .touch-dpad .touch-button.is-held {
-    border-image-source: url('./assets/ui/button-stone-down.png');
-  }
-
-  .dpad-u { grid-area: 1 / 2; }
-  .dpad-l { grid-area: 2 / 1; }
-  .dpad-r { grid-area: 2 / 3; }
-  .dpad-d { grid-area: 3 / 2; }
 
   .touch-button.is-dash {
+    width: min(74px, 19vw);
+    height: min(74px, 19vw);
+    margin-bottom: min(56px, 14vw);
+  }
+
+  .touch-button.is-jump {
     width: min(96px, 25vw);
     height: min(96px, 25vw);
-    font-size: 14px;
   }
 
   /* The corner fills the width, so the free will moves to the top-right, above pause. */
@@ -1857,36 +1983,25 @@
     font-size: 18px;
   }
 
-  /* Smaller, see-through touch buttons so they don't hide the low ledges. */
+  /* Smaller, see-through touch controls so they don't hide the low ledges. */
   .touch-controls {
     inset: auto 0 10px;
   }
 
-  .touch-button {
-    width: 46px;
-    height: 46px;
+  .touch-stick {
+    --stick: 112px;
     opacity: 0.8;
   }
 
   .touch-button.is-large {
-    width: 56px;
-    height: 56px;
-  }
-}
-
-@media (max-width: 480px) and (orientation: landscape) {
-  .touch-pad {
-    gap: 6px;
+    width: 58px;
+    height: 58px;
+    opacity: 0.8;
   }
 
-  .touch-button {
-    width: 50px;
-    height: 50px;
-  }
-
-  .touch-button.is-large {
-    width: 62px;
-    height: 62px;
+  .touch-button.is-jump {
+    width: 68px;
+    height: 68px;
   }
 }
 

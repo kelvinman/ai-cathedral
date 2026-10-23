@@ -1,11 +1,13 @@
 // Headless checks of the rules that are easy to break and hard to notice by playing:
 // every ledge is reachable, co-op revives work, the boss schedule holds, upgrades apply,
-// the Ledger unlocks, and the CAPTCHA wall holds followers. Run with `pnpm test`.
+// the Ledger unlocks, the CAPTCHA wall holds followers, and the tutorial always finishes.
+// Run with `pnpm test`.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   ARENAS,
+  DIFFICULTIES,
   GROUND_Y,
   MAX_WAVE,
   REVIVE_TIME,
@@ -23,6 +25,7 @@ import {
   type Input,
 } from '../src/game/engine'
 import { LEDGER, emptyLedger, recordRun } from '../src/game/lore'
+import { LESSONS, advanceTutorial, startTutorial } from '../src/ui/tutorial'
 
 const blank = (): Input => ({ left: false, right: false, down: false, jumpHeld: false, pressed: new Set() })
 
@@ -157,4 +160,24 @@ test('the Ledger opens its first page on any run, and apostate pages one per run
   const second = recordRun(ledger, { wave: 2, won: false, by: 'Early Adopter' })
   assert.ok(second.earned.some((entry) => entry.id.startsWith('no-')))
   assert.ok(LEDGER.length >= 20)
+})
+
+test('the tutorial never sticks: a lesson the player can\'t do moves on by itself', () => {
+  const g = quietGame()
+  const tutorial = startTutorial(g)
+  for (let t = 0; t < 300 && tutorial.lesson < LESSONS.length; t += 0.1) advanceTutorial(tutorial, g, 0.1)
+  assert.equal(tutorial.lesson, LESSONS.length)
+})
+
+test('difficulty scales follower health', () => {
+  const hit = (difficulty: keyof typeof DIFFICULTIES) => {
+    const g = makeGame({ difficulty })
+    g.phase = 'playing'
+    g.wave = 3
+    startWave(g)
+    g.marks.push({ x: 640, y: GROUND_Y, kind: 'acolyte', elite: false, timer: 0, maxTimer: 0.01 })
+    step(g, blank(), 1 / 120)
+    return g.enemies[0]?.maxHp ?? 0
+  }
+  assert.ok(hit('doubter') < hit('apostate') && hit('apostate') < hit('heretic'))
 })

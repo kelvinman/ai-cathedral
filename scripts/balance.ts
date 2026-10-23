@@ -4,13 +4,14 @@
 //
 //   pnpm balance            # 30 runs per player
 //   pnpm balance 100        # more runs, steadier numbers
+//   pnpm balance 30 heretic # on another difficulty (doubter, apostate, heretic)
 //
 // "Idle" never presses anything: with auto-fire and auto-rites the game must not play
 // itself, so idle should fall around the first boss. "Dodger" is a simple script that
 // keeps its distance, jumps blood spit and shockwaves, and dashes when cornered; a real
 // player using ledges and portals should do better than it.
 
-import { MAX_WAVE, chooseUpgrade, makeGame, startWave, step, type Game, type Input } from '../src/game/engine'
+import { DIFFICULTIES, MAX_WAVE, chooseUpgrade, makeGame, startWave, step, type Difficulty, type Game, type Input } from '../src/game/engine'
 
 type Strategy = (g: Game, input: Input) => void
 
@@ -61,8 +62,11 @@ const dodger: Strategy = (g, input) => {
   if (distance < 70) input.pressed.add('dash')
 }
 
+const difficulty = (process.argv[3] ?? 'apostate') as Difficulty
+if (!(difficulty in DIFFICULTIES)) throw new Error(`Unknown difficulty: ${difficulty}`)
+
 function play(strategy: Strategy) {
-  const g = makeGame()
+  const g = makeGame({ difficulty })
   g.phase = 'playing'
   startWave(g)
   const input: Input = { left: false, right: false, down: false, jumpHeld: false, pressed: new Set() }
@@ -102,6 +106,6 @@ for (const [name, strategy] of [
     'top killer': topKiller ? `${topKiller[0]} (${topKiller[1]})` : '–',
   }
 }
-console.log(`\n${runs} runs per player, ${MAX_WAVE} sermons to win\n`)
+console.log(`\n${runs} runs per player on ${DIFFICULTIES[difficulty].name}, ${MAX_WAVE} sermons to win\n`)
 console.table(rows)
-console.log('\nTargets: idle falls by about sermon 5; the dodger reaches the high single digits and occasionally wins.\n')
+console.log('\nTargets on Apostate: idle falls by about sermon 5; the dodger reaches the high single digits and occasionally wins.\n')
