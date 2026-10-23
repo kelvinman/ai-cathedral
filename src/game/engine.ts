@@ -76,6 +76,8 @@ export type Player = Body & {
   runPhase: number
   /** 0 for player one, 1 for player two in couch co-op. */
   index: number
+  /** Counts down after taking a hit: the renderer shows a recoil. */
+  hurtTime: number
   /** Each player's own combo: kills in quick succession, broken when they're hit. */
   combo: number
   comboTimer: number
@@ -128,6 +130,9 @@ export type Enemy = Body & {
   scale: number
   /** Which player hit it last: a kill builds that player's combo. */
   lastHitBy: number
+  /** Counts down after a hit: the renderer rocks it back away from the blow. */
+  flinch: number
+  flinchDir: number
   /** Nameplate for bosses. */
   title?: string
 }
@@ -153,6 +158,8 @@ export type Seal = Point & { r: number; life: number; maxLife: number; owner: nu
  */
 export type Glyph = Point & { r: number; life: number; arm: number; fired: boolean; owner: number; text: string }
 export type Particle = Point & {
+  /** Sparks draw as short streaks along their motion; everything else as a square. */
+  spark?: boolean
   vx: number
   vy: number
   life: number
@@ -185,6 +192,23 @@ export type Spit = Point & {
   minX?: number
   maxX?: number
 }
+/**
+ * A follower in its last moment: knocked back, then de-rendered from the top down in a line
+ * of light (they were only ever data). Drawn from the follower's own frame.
+ */
+export type Corpse = Point & {
+  kind: EnemyKind
+  elite: boolean
+  final: boolean
+  facing: 1 | -1
+  scale: number
+  h: number
+  /** Which way the killing blow pushed it. */
+  dir: number
+  life: number
+  maxLife: number
+}
+
 export type Ghost = Point & { facing: 1 | -1; life: number; player?: number }
 export type Stain = Point & { r: number; life: number }
 
@@ -236,6 +260,7 @@ export type Game = {
   pickups: Pickup[]
   marks: SpawnMark[]
   ghosts: Ghost[]
+  corpses: Corpse[]
   stains: Stain[]
   spits: Spit[]
   cooldownMax: Record<AbilityKey, number>
@@ -704,6 +729,7 @@ function makePlayer(index: number, x: number): Player {
     squash: 0,
     runPhase: 0,
     index,
+    hurtTime: 0,
     combo: 0,
     comboTimer: 0,
     cooldowns: { dash: 0, seal: 0, volley: 0, mirror: 0, glyph: 0 },
@@ -733,6 +759,7 @@ export function makeGame({ mode = 'story', players = 1 }: { mode?: Mode; players
     pickups: [],
     marks: [],
     ghosts: [],
+    corpses: [],
     stains: [],
     spits: [],
     cooldownMax: { ...BALANCE.cooldowns },
@@ -832,7 +859,7 @@ export function burst(
   color: string,
   count: number,
   speed: number,
-  options: { gravity?: number; size?: number; glow?: boolean; life?: number; up?: number } = {},
+  options: { gravity?: number; size?: number; glow?: boolean; life?: number; up?: number; spark?: boolean } = {},
 ) {
   for (let index = 0; index < count; index += 1) {
     const angle = Math.random() * Math.PI * 2
@@ -850,6 +877,7 @@ export function burst(
       gravity: options.gravity ?? 0,
       drag: 3,
       glow: options.glow ?? false,
+      spark: options.spark,
     })
   }
 }
@@ -890,6 +918,7 @@ function nearestPlayer(g: Game, from: Point) {
 function hurtPlayer(g: Game, p: Player, amount: number, fromX: number, by: string) {
   if (p.down || p.invuln > 0 || p.dashTime > 0 || p.shield > 0) return
   p.hp -= amount
+  p.hurtTime = 0.3
   g.lastHurtBy = by
   p.invuln = 1
   const direction = p.x >= fromX ? 1 : -1
@@ -911,6 +940,10 @@ function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: num
   if (e.hp <= 0) return
   e.hp -= amount
   e.lastHitBy = by
+  if (dirX) {
+    e.flinch = 0.16
+    e.flinchDir = Math.sign(dirX)
+  }
   e.flash = 0.09
   const resist = 1 - e.kbResist
   e.vx += dirX * knock * resist
@@ -918,7 +951,8 @@ function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: num
   e.stun = Math.max(e.stun, 0.14 * resist)
   g.events.push('hit')
   const c = chest(e)
-  burst(g, c.x, c.y, '#b3121f', 5, 240, { gravity: 1100, size: 3 })
+  burst(g, c.x, c.y, '#b3121f', 4, 240, { gravity: 1100, size: 3 })
+  burst(g, c.x, c.y, '#fff1c8', 4, 320, { glow: true, size: 2, life: 0.18, spark: true })
   floatText(g, c.x, e.y - e.h - 6, `${Math.round(amount)}`, '#f6e7c8', 18 + Math.min(10, amount / 6))
 }
 
@@ -1014,6 +1048,8 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     elite: mark.elite,
     title: final ? FINAL_TITLE : mark.elite ? ELITE_TITLE : undefined,
     lastHitBy: 0,
+    flinch: 0,
+    flinchDir: 1,
     x: mark.x,
     y: mark.y,
     vx: 0,
@@ -1232,6 +1268,7 @@ function updatePlayer(g: Game, p: Player, input: Input, dt: number) {
 
   p.invuln = Math.max(0, p.invuln - dt)
   p.shield = Math.max(0, p.shield - dt)
+  p.hurtTime = Math.max(0, p.hurtTime - dt)
   p.squash = approach(p.squash, 0, dt * 5)
 
   if (input.pressed.has('jump')) p.jumpBuffer = 0.14
@@ -1595,6 +1632,7 @@ function updateEnemies(g: Game, dt: number) {
     // Each follower goes after whichever player is nearest and still standing.
     const p = nearestPlayer(g, e)
     e.flash = Math.max(0, e.flash - dt)
+    e.flinch = Math.max(0, e.flinch - dt)
     e.slow = Math.max(0, e.slow - dt)
     e.rooted = Math.max(0, e.rooted - dt)
     e.stun = Math.max(0, e.stun - dt)
@@ -1933,8 +1971,23 @@ function resolveDeaths(g: Game) {
     g.waveKills += 1
     const c = chest(e)
     const big = e.kind === 'bishop'
-    burst(g, c.x, c.y, '#8f0d18', big ? 46 : 26, big ? 520 : 400, { gravity: 1400, size: 4, life: 0.9 })
-    burst(g, c.x, c.y, '#ffd6a0', 10, 300, { glow: true, size: 2.5, life: 0.35 })
+    const boss = Boolean(e.title)
+    const life = boss ? 1.4 : e.kind === 'wisp' ? 0.4 : 0.7
+    g.corpses.push({
+      x: e.x,
+      y: e.y,
+      kind: e.kind,
+      elite: e.elite,
+      final: e.title === FINAL_TITLE,
+      facing: e.facing,
+      scale: e.scale,
+      h: e.h,
+      dir: e.flinchDir || -e.facing,
+      life,
+      maxLife: life,
+    })
+    burst(g, c.x, c.y, '#8f0d18', big ? 30 : 14, big ? 480 : 360, { gravity: 1400, size: 4, life: 0.8 })
+    burst(g, c.x, c.y, '#ffd6a0', 12, 340, { glow: true, size: 2.5, life: 0.35, spark: true })
     g.trauma = Math.min(1, g.trauma + (e.elite ? 0.9 : big ? 0.45 : 0.22))
     g.hitstop = Math.max(g.hitstop, e.elite ? 0.25 : 0.035)
     if (e.kind !== 'wisp' || e.y > GROUND_Y - 20) {
@@ -1990,6 +2043,28 @@ function updateEffects(g: Game, dt: number) {
   g.ghosts = g.ghosts.filter((ghost) => ghost.life > 0)
   for (const stain of g.stains) stain.life -= dt
   g.stains = g.stains.filter((stain) => stain.life > 0)
+  // De-rendering followers shed pixels of light along the line where they're vanishing.
+  for (const corpse of g.corpses) {
+    corpse.life -= dt
+    const t = 1 - corpse.life / corpse.maxLife
+    if (t > 0.25 && Math.random() < dt * 40) {
+      const height = corpse.h * (1 - (t - 0.25) / 0.75)
+      g.particles.push({
+        x: corpse.x + rand(-12, 12),
+        y: corpse.y - height,
+        vx: rand(-30, 30),
+        vy: rand(-90, -40),
+        life: 0.5,
+        maxLife: 0.5,
+        color: corpse.final ? '#e43b44' : corpse.kind === 'wisp' ? '#2ce8f5' : '#f2d38b',
+        size: 2,
+        gravity: 0,
+        drag: 2,
+        glow: true,
+      })
+    }
+  }
+  g.corpses = g.corpses.filter((corpse) => corpse.life > 0)
 }
 
 /** Downed players: a partner standing close brings them back; when everyone is down, the run ends. */

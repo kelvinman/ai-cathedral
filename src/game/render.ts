@@ -20,6 +20,7 @@ import {
   type Platform,
   type Game,
   type Point,
+  type Corpse,
   REVIVE_TIME,
   cursed,
 } from './engine'
@@ -169,7 +170,7 @@ export type Assets = {
   vignette: HTMLCanvasElement
   redVignette: HTMLCanvasElement
   /** Each player's animation frames (player two in teal), outlined, plus a pale silhouette for the dash and its trail. */
-  player: Record<PlayerFrame, { base: Sprite; ghost: Sprite }>[]
+  player: Record<PlayerFrame, { base: Sprite; ghost: Sprite; hurt: Sprite }>[]
   enemy: {
     /** Each follower's frames, outlined, in each arena's dress. */
     dressed: Record<ArenaId, Record<FollowerBody, Sprite[]>>
@@ -910,7 +911,7 @@ export function loadAssets() {
           Object.fromEntries(
             PLAYER_FRAMES.map((name, index) => {
               const frame = crop(player, [index * PLAYER_FRAME.w, row * PLAYER_FRAME.h, PLAYER_FRAME.w, PLAYER_FRAME.h])
-              return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, row ? '#9be8d6' : '#bcc8ff') }]
+              return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, row ? '#9be8d6' : '#bcc8ff'), hurt: silhouette(frame, '#ff3049') }]
             }),
           ) as Assets['player'][number],
       ),
@@ -1055,6 +1056,36 @@ function dangerRing(ctx: CanvasRenderingContext2D, x: number, y: number, radius:
 /** A cheap hash for flicker that should look random but stay put within a beat. */
 const hash = (value: number) => Math.abs(Math.sin(value * 12.9898) * 43758.5453) % 1
 
+/**
+ * A follower's death: a white flash, knocked back by the blow, then de-rendered top-down
+ * behind a bright scan line (the engine sheds pixels of light from the line).
+ */
+function drawCorpse(ctx: CanvasRenderingContext2D, corpse: Corpse, assets: Assets, arena: ArenaId) {
+  const t = 1 - corpse.life / corpse.maxLife
+  const knock = Math.min(1, t / 0.25)
+  const body: FollowerBody = corpse.final ? 'final' : corpse.elite ? 'elite' : (corpse.kind as 'acolyte' | 'zealot' | 'bishop')
+  const wisp = corpse.kind === 'wisp'
+  const sprite = t < 0.1 ? (wisp ? assets.hand.flash[0] : assets.enemy.flash[body][0]) : wisp ? assets.hand.base[0] : assets.enemy.dressed[arena][body][0]
+  const scale = wisp ? PX : corpse.scale
+  const height = sprite.height * scale
+  const feet = wisp ? corpse.y - corpse.h / 2 + height / 2 : corpse.y
+  const x = corpse.x + corpse.dir * knock * 10
+  const tilt = corpse.dir * knock * 0.45
+  // Everything above the scan line has already gone.
+  const remaining = t < 0.25 ? 1 : 1 - (t - 0.25) / 0.75
+  const line = feet - height * remaining
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x - height, line, height * 2, height + 4)
+  ctx.clip()
+  drawCharacter(ctx, sprite, x, feet, scale, flipEnemy(corpse.facing), 1, 1, tilt)
+  ctx.restore()
+  if (t >= 0.25) {
+    ctx.fillStyle = corpse.final ? '#ff6a72' : wisp ? '#9be8d6' : '#fff1c8'
+    ctx.fillRect(snap(x - height * 0.32), snap(line), snap(height * 0.64), PX)
+  }
+}
+
 const flipEnemy = (facing: number) => facing !== ENEMY_SOURCE_FACING
 const flipPlayer = (facing: number) => facing !== PLAYER_SOURCE_FACING
 
@@ -1084,7 +1115,9 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, aren
     // The frames walk; this adds a little bob and sway on top.
     const walking = e.onGround && Math.abs(e.vx) > 20
     const bob = walking ? Math.abs(Math.sin(e.phase * 11)) * 1.5 : 0
-    const tilt = walking ? Math.sin(e.phase * 11) * 0.04 : 0
+    // A hit rocks it back away from the blow for a moment.
+    const flinch = e.flinch / 0.16
+    const tilt = (walking ? Math.sin(e.phase * 11) * 0.04 : 0) + e.flinchDir * flinch * 0.22
     // Tells: the Evangelist's crouch and the bosses' raised arms are frames; bosses also shudder.
     const shudder = e.bossCharge > 0 ? (Math.floor(time * 30) % 2 ? PX : -PX) : 0
     const stretch = e.onGround || e.lunge > 0 ? 1 : 1.04
@@ -1093,7 +1126,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, aren
     const telling = (e.windup > 0 || e.bossCharge > 0) && Math.floor(time * 12) % 2 === 0
     const sprite = e.flash > 0 || telling ? assets.enemy.flash[body][frame] : assets.enemy.dressed[arena][body][frame]
     const flip = flipEnemy(e.facing)
-    drawCharacter(ctx, sprite, e.x + shudder, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
+    drawCharacter(ctx, sprite, e.x + shudder + e.flinchDir * flinch * 4, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
     if (e.rooted > 0 || e.slow > 0) {
       ctx.globalAlpha = e.rooted > 0 ? 0.55 : 0.3 + Math.sin(time * 12) * 0.1
       const effect = e.rooted > 0 ? assets.enemy.rooted : assets.enemy.slowed
@@ -1336,6 +1369,14 @@ export function render(
     const target = particle.glow ? glow : top
     target.globalAlpha = particle.glow ? alpha : Math.min(1, alpha * 2)
     target.fillStyle = particle.color
+    if (particle.spark) {
+      // A short streak along its flight.
+      const speed = Math.hypot(particle.vx, particle.vy) || 1
+      for (let step = 0; step < 3; step += 1) {
+        target.fillRect(snap(particle.x - (particle.vx / speed) * step * PX), snap(particle.y - (particle.vy / speed) * step * PX), PX, PX)
+      }
+      continue
+    }
     const size = Math.max(PX, snap(particle.glow ? particle.size * (0.5 + alpha * 0.5) : particle.size))
     target.fillRect(snap(particle.x - size / 2), snap(particle.y - size / 2), size, size)
   }
@@ -1481,6 +1522,7 @@ export function render(
   ctx.drawImage(layers.ground.element, SCENE.left, SCENE.top, SCENE.right - SCENE.left, SCENE.bottom - SCENE.top)
 
   for (const enemy of g.enemies) drawEnemy(ctx, enemy, assets, g.arena.id, time)
+  for (const corpse of g.corpses) drawCorpse(ctx, corpse, assets, g.arena.id)
 
   for (const ghost of g.ghosts) {
     ctx.globalAlpha = (ghost.life / 0.22) * 0.45
@@ -1497,22 +1539,21 @@ export function render(
       ctx.globalAlpha = 1
       continue
     }
-    const blink = p.invuln > 0 && p.dashTime <= 0 && Math.floor(time * 16) % 2 === 0
-    // The frames carry the run's bob and most of its lean; this adds a little tilt with speed.
-    const lean = (p.vx / 900) * 0.18
-    const frame = frames[p.dashTime > 0 ? 'run2' : playerFrame(p, time)]
+    const hurt = p.hurtTime / 0.3
+    const dashing = p.dashTime > 0
+    const blink = p.invuln > 0 && !dashing && hurt <= 0 && Math.floor(time * 16) % 2 === 0
+    // The frames carry the run's bob and most of its lean; this adds a little tilt with speed,
+    // a hard forward lean and stretch in a dash, and a recoil (thrown back, flashing red) when hit.
+    const lean = (p.vx / 900) * 0.18 + (dashing ? p.dashDir * 0.22 : 0) - p.facing * hurt * 0.3
+    const frame = frames[dashing ? 'run2' : hurt > 0.5 ? 'fall' : playerFrame(p, time)]
+    const stretchX = (1 + p.squash * 0.6) * (dashing ? 1.25 : 1)
+    const stretchY = (1 - p.squash) * (dashing ? 0.86 : 1)
     ctx.globalAlpha = blink ? 0.35 : 1
-    drawCharacter(
-      ctx,
-      p.dashTime > 0 ? frame.ghost : frame.base,
-      p.x,
-      p.y,
-      PLAYER_SCALE,
-      flipPlayer(p.facing),
-      1 + p.squash * 0.6,
-      1 - p.squash,
-      lean,
-    )
+    drawCharacter(ctx, dashing ? frame.ghost : frame.base, p.x, p.y, PLAYER_SCALE, flipPlayer(p.facing), stretchX, stretchY, lean)
+    if (hurt > 0 && Math.floor(time * 20) % 2 === 0) {
+      ctx.globalAlpha = 0.6 * hurt
+      drawCharacter(ctx, frame.hurt, p.x, p.y, PLAYER_SCALE, flipPlayer(p.facing), stretchX, stretchY, lean)
+    }
     ctx.globalAlpha = 1
   }
   // In co-op, a marker over each player's head (gold for one, teal for two), and a ring that
