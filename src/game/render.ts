@@ -4,7 +4,7 @@ import cryptUrl from '../assets/crypt-sprites.png'
 import tombUrl from '../assets/tomb-sprites.png'
 import vaultUrl from '../assets/vault-sprites.png'
 import enemyUrl from '../assets/enemy-sprite.png'
-import playerUrl from '../assets/player-sprite.png'
+import playerUrl from '../assets/player-frames.png'
 import {
   BRICK,
   ARENAS,
@@ -162,20 +162,33 @@ export type Assets = {
   cathedral: HTMLImageElement
   backgrounds: Record<ArenaId, HTMLCanvasElement>
   statusLights: StatusLight[]
+  /** The crypt's ossuary skulls, whose eyes light up as a chapter goes on. */
+  skullEyes: (Point & { seed: number })[]
   vignette: HTMLCanvasElement
   redVignette: HTMLCanvasElement
-  player: { base: Sprite; flash: Sprite; ghost: Sprite }
+  /** Each animation frame, outlined, plus a pale silhouette for the dash and its trail. */
+  player: Record<PlayerFrame, { base: Sprite; ghost: Sprite }>
   enemy: {
-    acolyte: Sprite
-    zealot: Sprite
-    bishop: Sprite
-    elite: Sprite
+    /** Followers in each arena's dress. */
+    marked: Record<ArenaId, Record<'acolyte' | 'zealot' | 'bishop' | 'elite', Sprite>>
     final: Sprite
     flash: Sprite
     slowed: Sprite
     rooted: Sprite
   }
   skull: { base: Sprite; flash: Sprite }
+}
+
+/** The frames in src/assets/player-frames.png, left to right (see scripts/generate-characters.mjs). */
+const PLAYER_FRAMES = ['idle0', 'idle1', 'run0', 'run1', 'run2', 'run3', 'run4', 'run5', 'jump', 'fall'] as const
+type PlayerFrame = (typeof PLAYER_FRAMES)[number]
+const PLAYER_FRAME = { w: 52, h: 94 }
+
+/** Rising or falling in the air; on the ground, a six-frame run cycle or a slow breath. */
+function playerFrame(p: Game['player'], time: number): PlayerFrame {
+  if (!p.onGround) return p.vy < 0 ? 'jump' : 'fall'
+  if (Math.abs(p.vx) > 40) return PLAYER_FRAMES[2 + (Math.floor((p.runPhase / TAU) * 6) % 6)]
+  return Math.floor(time / 0.6) % 2 ? 'idle1' : 'idle0'
 }
 
 // The source art faces opposite ways: the player looks left, the followers look right.
@@ -220,6 +233,7 @@ function outlined(
   image: CanvasImageSource & { width: number; height: number },
   outline: string,
   tint?: [string, number],
+  mark?: ArenaId,
 ) {
   const tinted = canvas(image.width, image.height)
   tinted.ctx.drawImage(image, 0, 0)
@@ -228,7 +242,11 @@ function outlined(
     tinted.ctx.globalAlpha = tint[1]
     tinted.ctx.fillStyle = tint[0]
     tinted.ctx.fillRect(0, 0, image.width, image.height)
+    tinted.ctx.globalCompositeOperation = 'source-over'
+    tinted.ctx.globalAlpha = 1
   }
+  // Drawn after the tint, so a Hype Bishop's red glow doesn't muddy its arena's mark.
+  if (mark) drawPixels(tinted.ctx, ARENA_MARKS[mark])
   const edge = silhouette(image, outline)
   const { element, ctx } = canvas(image.width + 2, image.height + 2)
   for (const [x, y] of [
@@ -478,8 +496,12 @@ function buildCathedral(sheets: Sheets) {
  * skull-filled ossuary niches, hanging chains, braziers, and the Eye of the Logos carved where
  * the cathedral has its rose window. The centre ledge is a sarcophagus.
  */
+/** Where each ossuary skull's eyes are in CRYPT.ossuary (its skulls start at these offsets). */
+const OSSUARY_SKULLS = [[1, 2], [8, 2], [15, 2], [22, 2], [29, 2], [4, 8], [11, 8], [18, 8], [25, 8]]
+
 function buildCrypt(sheets: Sheets) {
   const { cathedral, crypt } = sheets
+  const skullEyes: (Point & { seed: number })[] = []
   const { element, ctx } = sceneCanvas()
   const random = seeded(13)
   const { left, top, right, bottom } = SCENE
@@ -498,7 +520,14 @@ function buildCrypt(sheets: Sheets) {
     [56, 368],
     [912, 1224],
   ]) {
-    for (let x = from; x + ossuaryW <= to; x += ossuaryW) drawAtlas(ctx, crypt, CRYPT.ossuary, x, 300, PX)
+    for (let x = from; x + ossuaryW <= to; x += ossuaryW) {
+      drawAtlas(ctx, crypt, CRYPT.ossuary, x, 300, PX)
+      for (const [ox, oy] of OSSUARY_SKULLS) {
+        // A skull wraps round the tile edge; skip the ones split across it.
+        if (ox + 4 >= 32) continue
+        for (const eye of [1, 3]) skullEyes.push({ x: x + (ox + eye) * PX, y: 300 + (oy + 2) * PX, seed: random() })
+      }
+    }
   }
 
   // The Eye of the Logos, glowing a cold teal.
@@ -569,7 +598,7 @@ function buildCrypt(sheets: Sheets) {
   })
   drawCandles(ctx, sheets, arena)
   fadeBleed(ctx)
-  return element
+  return { element, skullEyes }
 }
 
 /**
@@ -748,6 +777,76 @@ function buildTomb(sheets: Sheets) {
   return element
 }
 
+/** The question mark on the dead monolith's screen, in world pixels from its top-left. */
+const MONOLITH_MARK = { x: W / 2 - 64 + 60, y: GROUND_Y - 300 + 100, rows: ['.###.', '#...#', '...#.', '..#..', '.....', '..#..'] }
+
+/**
+ * The scene changes as a chapter goes on (stage 0–4). The nave's rose window burns redder;
+ * the crypt's skulls open their eyes one by one; the vault's lights turn red and its screen
+ * glitches, until on the boss sermon the Eye on it is red too (and every slam flashes the
+ * racks red: the Arch-Deacon is shaking the body it built); in the tomb the gold Eye
+ * blazes and the dead monolith's question mark flickers back on.
+ */
+function drawChapterMood(ctx: CanvasRenderingContext2D, g: Game, assets: Assets, stage: number, time: number) {
+  const id = g.arena.id
+  ctx.globalCompositeOperation = 'lighter'
+  if (id === 'cathedral' && stage > 0) halo(ctx, W / 2, ROSE_Y, 260, '190, 30, 50', stage * 0.05)
+  if (id === 'tomb' && stage > 0) halo(ctx, W / 2, 120, 220 + stage * 20, '228, 166, 114', stage * 0.06)
+  ctx.globalCompositeOperation = 'source-over'
+
+  if (id === 'crypt') {
+    const awake = stage / 4
+    for (const eye of assets.skullEyes) {
+      if (eye.seed >= awake * 0.9 + 0.05 || Math.sin(time * 3 + eye.seed * 30) < -0.6) continue
+      ctx.fillStyle = '#e43b44'
+      ctx.fillRect(eye.x, eye.y, PX, PX)
+    }
+  }
+
+  if (id === 'vault') {
+    const shaken = stage === 4 && g.trauma > 0.45
+    const red = stage * 0.15
+    for (const light of assets.statusLights) {
+      if (!shaken && Math.sin(time * (1.2 + light.seed * 4) + light.seed * 40) < -0.3) continue
+      ctx.fillStyle = shaken || light.seed < red ? '#e43b44' : light.color
+      ctx.fillRect(light.x, light.y, PX * 2, PX)
+    }
+    // The screen's picture area, and its eye at the centre.
+    const screen = { x: W / 2 - 78, y: 50, w: 156, h: 88 }
+    if (stage >= 1) {
+      // Glitches come more often, and last longer, as the chapter goes on.
+      const beat = Math.floor(time * 6)
+      const roll = Math.abs(Math.sin(beat * 12.9898) * 43758.5453) % 1
+      if (roll < stage * 0.08) {
+        for (let band = 0; band < 2 + stage; band += 1) {
+          const y = screen.y + Math.floor((Math.abs(Math.sin((beat + band) * 78.233)) % 1) * screen.h)
+          ctx.fillStyle = band % 2 ? 'rgba(228, 59, 68, 0.45)' : 'rgba(198, 245, 232, 0.35)'
+          ctx.fillRect(screen.x, snap(y), screen.w, PX * (1 + (band % 3)))
+        }
+      }
+    }
+    if (stage === 4) {
+      ctx.globalCompositeOperation = 'lighter'
+      halo(ctx, W / 2, 93, 36, '228, 40, 60', 0.55 + Math.sin(time * 4) * 0.1)
+      ctx.globalCompositeOperation = 'source-over'
+    }
+  }
+
+  if (id === 'tomb' && stage >= 2) {
+    // Flickering at first; steady on the final sermon.
+    const on = stage === 4 || Math.sin(time * 5) + Math.sin(time * 13) > 1.2 - stage * 0.3
+    if (on) {
+      ctx.fillStyle = '#9be8d6'
+      MONOLITH_MARK.rows.forEach((row, y) =>
+        [...row].forEach((bit, x) => bit === '#' && ctx.fillRect(MONOLITH_MARK.x + x * PX, MONOLITH_MARK.y + y * PX, PX, PX)),
+      )
+      ctx.globalCompositeOperation = 'lighter'
+      halo(ctx, MONOLITH_MARK.x + 5, MONOLITH_MARK.y + 6, 30, '88, 143, 109', stage === 4 ? 0.5 : 0.3)
+      ctx.globalCompositeOperation = 'source-over'
+    }
+  }
+}
+
 /** Vignette with hard alpha steps, sampled on a coarse grid. */
 function buildVignette(rgb: string, steps: number[]) {
   const width = W / 4
@@ -788,28 +887,41 @@ export function loadAssets() {
     const skull = crop(atlas, ATLAS.skull)
     const sheets: Sheets = { atlas, cathedral, crypt, vault, tomb }
     const vaultScene = buildVault(sheets)
+    const cryptScene = buildCrypt(sheets)
     return {
       atlas,
       cathedral,
       backgrounds: {
         cathedral: buildCathedral(sheets),
-        crypt: buildCrypt(sheets),
+        crypt: cryptScene.element,
         vault: vaultScene.element,
         tomb: buildTomb(sheets),
       },
       statusLights: vaultScene.statusLights,
+      skullEyes: cryptScene.skullEyes,
       vignette: buildVignette('0,0,0', [0.18, 0.32, 0.46, 0.6, 0.72]),
       redVignette: buildVignette('200,0,20', [0.3, 0.5, 0.7, 0.85, 1]),
-      player: {
-        base: outlined(player, '#050307'),
-        flash: silhouette(player, '#ffffff'),
-        ghost: silhouette(player, '#bcc8ff'),
-      },
+      player: Object.fromEntries(
+        PLAYER_FRAMES.map((name, index) => {
+          const frame = crop(player, [index * PLAYER_FRAME.w, 0, PLAYER_FRAME.w, PLAYER_FRAME.h])
+          return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, '#bcc8ff') }]
+        }),
+      ) as Assets['player'],
       enemy: {
-        acolyte: outlined(enemy, '#4a0711'),
-        zealot: outlined(enemy, '#4a0711', ['#7a33e0', 0.38]),
-        bishop: outlined(enemy, '#4a0711', ['#c0142a', 0.42]),
-        elite: outlined(enemy, '#f2b04a', ['#c0142a', 0.5]),
+        marked: Object.fromEntries(
+          Object.keys(ARENAS).map((id) => {
+            const mark = id as ArenaId
+            return [
+              mark,
+              {
+                acolyte: outlined(enemy, '#4a0711', undefined, mark),
+                zealot: outlined(enemy, '#4a0711', ['#7a33e0', 0.38], mark),
+                bishop: outlined(enemy, '#4a0711', ['#c0142a', 0.42], mark),
+                elite: outlined(enemy, '#f2b04a', ['#c0142a', 0.5], mark),
+              },
+            ]
+          }),
+        ) as Assets['enemy']['marked'],
         // The Logos: a shadow-dark body with a blood-red outline.
         final: outlined(enemy, '#e43b44', ['#181425', 0.6]),
         flash: silhouette(enemy, '#ffffff'),
@@ -857,10 +969,72 @@ function drawCharacter(
   ctx.restore()
 }
 
+/**
+ * What the followers wear in each arena, as pixel maps over src/assets/enemy-sprite.png
+ * (56×84, facing right, face at about x 35–43, rows 6–17). Each map is an origin, rows of
+ * characters, and what each character paints. The nave's followers wear nothing extra.
+ */
+type PixelMap = { x: number; y: number; rows: string[]; colors: Record<string, string> }
+const ARENA_MARKS: Record<ArenaId, PixelMap[]> = {
+  cathedral: [],
+  // The ninety-nine's bones, worn as masks.
+  crypt: [
+    {
+      x: 35,
+      y: 7,
+      rows: ['..#####..', '.#######.', '#oo###oo#', '#oo###oo#', '####o###s', '.######s.', '..#o#o#..'],
+      colors: { '#': '#ead4aa', s: '#c0cbdc', o: '#181425' },
+    },
+  ],
+  // Plugged in: a glowing visor, and a cable from the back of the head.
+  vault: [
+    { x: 33, y: 10, rows: ['=============', '-------------'], colors: { '=': '#c6f5e8', '-': '#588f6d' } },
+    { x: 45, y: 9, rows: ['r'], colors: { r: '#e43b44' } },
+    {
+      x: 19,
+      y: 9,
+      rows: [
+        '.........##',
+        '........##.',
+        '.......##..',
+        '......##...',
+        '.....##....',
+        '....##.....',
+        '...##......',
+        '...##......',
+        '..##.......',
+        '..##.......',
+        '.##........',
+        '.##........',
+        '##.........',
+      ],
+      colors: { '#': '#181425' },
+    },
+  ],
+  // The devout: a gold circlet with the Eye set in it, and a gold stole.
+  tomb: [
+    { x: 29, y: 5, rows: ['=============er', '-------------rw'], colors: { '=': '#e4a672', '-': '#b86f50', e: '#e4a672', r: '#e43b44', w: '#ffffff' } },
+    { x: 34, y: 18, rows: Array.from({ length: 16 }, (_, row) => (row % 2 ? '#=' : '=#')), colors: { '=': '#e4a672', '#': '#b86f50' } },
+  ],
+}
+
+function drawPixels(ctx: CanvasRenderingContext2D, maps: PixelMap[]) {
+  for (const map of maps) {
+    map.rows.forEach((row, y) =>
+      [...row].forEach((key, x) => {
+        const color = map.colors[key]
+        if (!color) return
+        ctx.fillStyle = color
+        ctx.fillRect(map.x + x, map.y + y, 1, 1)
+      }),
+    )
+  }
+}
+
 const flipEnemy = (facing: number) => facing !== ENEMY_SOURCE_FACING
 const flipPlayer = (facing: number) => facing !== PLAYER_SOURCE_FACING
 
-function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, time: number) {
+function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, arena: ArenaId, time: number) {
   const turnSquash = 1 - e.turn * 0.55
   if (e.kind === 'wisp') {
     const bob = Math.sin(e.phase * 6) * 3
@@ -874,7 +1048,8 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, time
     const crouch = e.windup > 0 ? 0.78 : 1
     const shudder = e.bossCharge > 0 ? (Math.floor(time * 30) % 2 ? PX : -PX) : 0
     const stretch = (e.onGround ? 1 : 1.06) * crouch
-    const base = e.title === FINAL_TITLE ? assets.enemy.final : e.elite ? assets.enemy.elite : assets.enemy[e.kind]
+    const dressed = assets.enemy.marked[arena]
+    const base = e.title === FINAL_TITLE ? assets.enemy.final : e.elite ? dressed.elite : dressed[e.kind as 'acolyte' | 'zealot' | 'bishop']
     const telling = (e.windup > 0 || e.bossCharge > 0) && Math.floor(time * 12) % 2 === 0
     const sprite = e.flash > 0 || telling ? assets.enemy.flash : base
     const flip = flipEnemy(e.facing)
@@ -930,7 +1105,9 @@ export function render(
   ground.globalCompositeOperation = 'lighter'
   // Light falls from each arena's centrepiece: the rose window, the Eye in the crypt,
   // the Logos's screen in the vault, the gold Eye in the tomb.
-  const shaftAlpha = 0.05 + Math.sin(time * 0.7) * 0.012
+  // Each chapter builds toward its boss: stage 0 is its first sermon, 4 the boss sermon.
+  const stage = (g.wave - 1) % 5
+  const shaftAlpha = 0.05 + stage * 0.01 + Math.sin(time * 0.7) * 0.012
   const [shaftColor, shaftTop] = SHAFTS[arena.id]
   for (let step = 0; step < 3; step += 1) {
     const inset = step * 70
@@ -948,16 +1125,7 @@ export function render(
     if (candle.lamp) halo(ground, candle.x, candle.y - 26, 80, '120, 200, 210', 0.3)
     else halo(ground, candle.x, candle.y - 26, candle.brazier ? 90 : 62, '255, 150, 70', candle.brazier ? flicker + 0.08 : flicker)
   }
-  ground.globalCompositeOperation = 'source-over'
-  if (arena.id === 'vault') {
-    // Rack status lights, each blinking at its own rate. Two pixels wide, so they read
-    // at a glance rather than as noise.
-    for (const light of assets.statusLights) {
-      if (Math.sin(time * (1.2 + light.seed * 4) + light.seed * 40) < -0.3) continue
-      ground.fillStyle = light.color
-      ground.fillRect(light.x, light.y, PX * 2, PX)
-    }
-  }
+  drawChapterMood(ground, g, assets, stage, time)
   ground.globalCompositeOperation = 'lighter'
   if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
@@ -1172,25 +1340,25 @@ export function render(
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(layers.ground.element, SCENE.left, SCENE.top, SCENE.right - SCENE.left, SCENE.bottom - SCENE.top)
 
-  for (const enemy of g.enemies) drawEnemy(ctx, enemy, assets, time)
+  for (const enemy of g.enemies) drawEnemy(ctx, enemy, assets, g.arena.id, time)
 
   for (const ghost of g.ghosts) {
     ctx.globalAlpha = (ghost.life / 0.22) * 0.45
-    drawCharacter(ctx, assets.player.ghost, ghost.x, ghost.y, PLAYER_SCALE, flipPlayer(ghost.facing))
+    drawCharacter(ctx, assets.player.run2.ghost, ghost.x, ghost.y, PLAYER_SCALE, flipPlayer(ghost.facing))
   }
   ctx.globalAlpha = 1
 
   if (playerVisible) {
     const blink = p.invuln > 0 && p.dashTime <= 0 && Math.floor(time * 16) % 2 === 0
-    const running = p.onGround && Math.abs(p.vx) > 40
-    const bob = running ? Math.abs(Math.sin(p.runPhase)) * 3 : 0
-    const lean = (p.vx / 900) * 0.35
+    // The frames carry the run's bob and most of its lean; this adds a little tilt with speed.
+    const lean = (p.vx / 900) * 0.18
+    const frame = assets.player[p.dashTime > 0 ? 'run2' : playerFrame(p, time)]
     ctx.globalAlpha = blink ? 0.35 : 1
     drawCharacter(
       ctx,
-      p.dashTime > 0 ? assets.player.ghost : assets.player.base,
+      p.dashTime > 0 ? frame.ghost : frame.base,
       p.x,
-      p.y - bob,
+      p.y,
       PLAYER_SCALE,
       flipPlayer(p.facing),
       1 + p.squash * 0.6,

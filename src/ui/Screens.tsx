@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { CURSE_RULES, ENEMY_NAMES, type Curse, type Upgrade, type WaveState } from '../game/engine'
+import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, type Curse, type Upgrade, type WaveState } from '../game/engine'
 import { LEDGER, type LedgerEntry, type LedgerState } from '../game/lore'
 import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
@@ -41,7 +41,13 @@ export function TitleScreen({
             </button>
           )}
         </div>
-        {best > 0 && <span className="label subtle">Best free will · {best.toLocaleString()}</span>}
+        {(best > 0 || ledger.deepest > 5) && (
+          <span className="label subtle">
+            {ledger.deepest > 5 && `Deepest · ${ARENAS[arenaForWave(ledger.deepest)].name}`}
+            {ledger.deepest > 5 && best > 0 && ' · '}
+            {best > 0 && `Best free will · ${best.toLocaleString()}`}
+          </span>
+        )}
       </div>
     </div>
   )

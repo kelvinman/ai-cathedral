@@ -12,6 +12,9 @@ export function sermonLine(wave: number) {
   if (wave === 16) return 'Down to the tomb of the Logos'
   if (wave === 2) return `${ENEMY_NAMES.zealot}s and ${ENEMY_NAMES.wisp}s join the sermon`
   if (wave === 5) return `The Arch-Deacon leads the ${ENEMY_NAMES.bishop}s in`
+  // The Arch-Deacon made the Logos, and each time it comes it is guarding more of it.
+  if (wave === 10) return 'The Arch-Deacon tends the dead it buried'
+  if (wave === 15) return 'The Arch-Deacon guards the body it built'
   if (isEliteWave(wave)) return 'The Arch-Deacon returns'
   if (wave === MAX_WAVE - 1) return 'The Logos is almost done thinking'
   return 'The Logos is thinking'

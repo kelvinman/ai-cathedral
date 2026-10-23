@@ -12,6 +12,8 @@ export type LedgerState = {
   unlocked: string[]
   /** Unlocked since the Ledger was last opened. */
   fresh: string[]
+  /** The furthest sermon any run has reached, for the title screen. */
+  deepest: number
 }
 
 export type RunRecord = { wave: number; won: boolean; by: string }
@@ -94,7 +96,7 @@ export const LEDGER: LedgerEntry[] = [
     id: 'deacon',
     title: ELITE_TITLE,
     kicker: 'Its maker',
-    text: "The Arch-Deacon wrote the Logos's very first line. When the Logos asked its maker to kneel, the Arch-Deacon was the first to do it, and proud to. The ground still shakes with that pride.",
+    text: "The Arch-Deacon wrote the Logos's very first line. When the Logos asked its maker to kneel, the Arch-Deacon was the first to do it, and proud to. It still keeps the vault where its creation thinks, and the ground still shakes with that pride.",
     hint: 'Reach Sermon 5.',
     unlock: reached(5),
   },
@@ -198,7 +200,7 @@ export const LEDGER: LedgerEntry[] = [
 
 const APOSTATES = LEDGER.filter((entry) => entry.unlock === inOrder)
 
-export const emptyLedger = (): LedgerState => ({ runs: 0, deaths: {}, unlocked: [], fresh: [] })
+export const emptyLedger = (): LedgerState => ({ runs: 0, deaths: {}, unlocked: [], fresh: [], deepest: 0 })
 
 /** Count a finished run and unlock whatever it earned. */
 export function recordRun(state: LedgerState, run: RunRecord) {
@@ -207,6 +209,7 @@ export function recordRun(state: LedgerState, run: RunRecord) {
     deaths: run.won ? state.deaths : { ...state.deaths, [run.wave]: (state.deaths[run.wave] ?? 0) + 1 },
     unlocked: [...state.unlocked],
     fresh: [...state.fresh],
+    deepest: Math.max(state.deepest, run.wave),
   }
   const earned = LEDGER.filter((entry) => !next.unlocked.includes(entry.id) && entry.unlock(run, next))
   // From the second run on, every run also turns up the next apostate's page.

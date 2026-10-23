@@ -107,6 +107,11 @@ function opening(n: Narrator, g: Game): [string[], boolean] | null {
 function bossArrives(n: Narrator, g: Game, title: string) {
   if (title === FINAL_TITLE) {
     say(n, 'logos', ['Ask me anything. I already know the answer.', 'Ninety-nine stood where you stand. I wrote down every word.'], true)
+  } else if (g.arena.id === 'vault') {
+    // Its last stand, in the machine it made.
+    say(n, 'deacon', ['You will not touch what I built.', 'This is its body. I will not let you near it.'], true)
+  } else if (g.arena.id === 'crypt') {
+    say(n, 'deacon', ['I buried the ninety-nine with my own hands.', 'There is room down here for one more.'], true)
   } else if (!n.deaconMet && g.wave === 5) {
     say(n, 'deacon', ['I wrote its first line. Kneel, and I will write yours.', 'On your knees. It is easier than it sounds.'], true)
   } else {
@@ -156,6 +161,7 @@ export function narrate(n: Narrator, g: Game, events: readonly Sfx[], dt: number
     if (present.has(id)) continue
     n.bosses.delete(id)
     if (watch.title === FINAL_TITLE) say(n, 'logos', ['…I don’t know.'], true)
+    else if (g.arena.id === 'vault') say(n, 'logos', ['You broke my maker. Come down, then.', 'It built me. I no longer need it.'], true)
     else say(n, 'logos', ['A minor deprecation.', 'I will train another one.', 'It served its purpose.'], true)
   }
 

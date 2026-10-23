@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { playSfx, setMusicIntensity, setVolumes, startMusic, unlockAudio } from './game/audio'
 import {
+  ARENAS,
   H,
   MAX_WAVE,
   W,
+  arenaForWave,
   chooseUpgrade,
   isEliteWave,
   makeGame,
@@ -67,7 +69,10 @@ function loadSettings(): Settings {
 
 function loadLedger(): LedgerState {
   try {
-    return { ...emptyLedger(), ...(JSON.parse(readStorage('abc-ledger') ?? '{}') as Partial<LedgerState>) }
+    const saved = { ...emptyLedger(), ...(JSON.parse(readStorage('abc-ledger') ?? '{}') as Partial<LedgerState>) }
+    // Saves from before `deepest` existed: the furthest sermon a run ended on.
+    saved.deepest ||= Math.max(0, ...Object.keys(saved.deaths).map(Number))
+    return saved
   } catch {
     return emptyLedger()
   }
@@ -351,6 +356,11 @@ export default function App() {
   useEffect(() => {
     if (phase === 'paused') showPauseView('menu')
   }, [phase, showPauseView])
+
+  // The title screen stands in the deepest place a run has reached.
+  useEffect(() => {
+    if (phase === 'title') gameRef.current.arena = ARENAS[arenaForWave(Math.max(1, ledger.deepest))]
+  }, [phase, ledger.deepest])
 
   // The first-run card also fades on its own after a while.
   useEffect(() => {
