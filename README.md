@@ -33,6 +33,39 @@ the nave to the tomb where the Logos began.
 ![Sermon 18, in the tomb of the Logos](docs/tomb.jpg)
 ![Followers de-rendering](docs/derender.jpg)
 
+## The story behind it
+
+AI Cathedral started with Jon, Danny and Vic at the Friends of Figma Los Angeles AI
+Impact Workshop, where we prototyped it in Figma Make: a gothic cathedral, an AI god, and
+a lone apostate holding out against its followers.
+
+After the workshop I kept going. I worked with Claude (Anthropic's AI) as a collaborator
+for the code and pixel art, while I made the calls on direction: what the game should feel
+like, what to cut, and what wasn't good enough yet. It's a game about blind faith in AI,
+made by directing one closely, which felt like the right way to build it.
+
+## Design decisions
+
+**One look, enforced.** The early build mixed art styles and blurry, too-modern pieces. I
+pulled everything back to the original sprite sheet's look: one 32-colour palette, one
+chunky pixel grid, and every arena, follower and UI frame redrawn in code to match.
+
+**Fewer buttons, more movement.** Aiming, firing and casting rites by hand made the
+controls too complicated. Firing and rites became automatic, so the whole game is four inputs
+(move, jump, drop, dash) and every decision is about where to stand.
+
+**Red means danger, always.** When I restyled the enemy attacks to fit the AI theme
+(glitch shards, gold "promises", the Logos's red words), they stopped reading as
+threats. Every hostile shot now wears a pulsing red ring, and nothing the player fires is
+ever red.
+
+**A story you never have to skip.** Cutscenes die on a game you replay. Instead, the
+Logos and its Arch-Deacon talk during play, lines react to how a run is going, and lore
+pages unlock across runs in the Ledger for anyone who wants them.
+
+**Newer isn't always better.** I swapped the synthesized sound effects for a pack of
+recorded ones, played it, and switched back: the originals suited the game better.
+
 ## Controls
 
 | | Keyboard | Gamepad |
