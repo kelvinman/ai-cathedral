@@ -224,6 +224,44 @@
   padding-top: 10px;
 }
 
+/* Player two's corner (co-op): under the score, right-aligned. */
+.corner.is-right {
+  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+  left: auto;
+  right: max(14px, env(safe-area-inset-right));
+}
+
+.corner.is-right .corner-stack {
+  justify-items: end;
+  padding-top: 0;
+}
+
+.corner.is-right .health-pips {
+  justify-content: flex-end;
+}
+
+/* A downed player's corner: a revive bar in place of the health pips. */
+.downed {
+  display: grid;
+  gap: 4px;
+  width: 190px;
+}
+
+.downed span {
+  font-family: var(--label);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--blood3);
+  text-shadow: var(--outline);
+}
+
+.downed i {
+  height: 8px;
+  border: 2px solid var(--ink);
+  background: var(--gold1);
+  transform-origin: left center;
+}
+
 .health-pips {
   display: flex;
   flex-wrap: wrap;
@@ -814,6 +852,48 @@
 
 .controls-panel .controls {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Co-op controls: one row per player. */
+.controls.is-coop {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.controls.is-coop div {
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  justify-items: start;
+}
+
+.controls.is-coop dt {
+  font-family: var(--label);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--gold1);
+}
+
+.controls.is-coop dd {
+  color: var(--stone4);
+}
+
+.controls.is-coop kbd {
+  min-width: 22px;
+  margin: 0 1px;
+}
+
+/* The endless button's stand-in until it's unlocked. */
+.locked-mode {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  padding: 0 12px;
+  font-family: var(--label);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--stone2);
+  background: var(--stone0);
+  box-shadow: var(--inset);
 }
 
 .controls-note {

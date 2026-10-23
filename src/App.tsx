@@ -8,6 +8,7 @@ import {
   arenaForWave,
   chooseUpgrade,
   isEliteWave,
+  isFinalWave,
   makeGame,
   startWave,
   step,
@@ -17,6 +18,7 @@ import {
   type Curse,
   type Game,
   type Input,
+  type Mode,
   type Phase,
   type Upgrade,
 } from './game/engine'
@@ -36,23 +38,18 @@ import {
   type RunSummary,
 } from './ui/Screens'
 import { ControlsList, RiteTip, pad } from './ui/shared'
+import { GAME_KEYS, heldKeys, keyAction, keyPlayer, readPads } from './ui/controls'
 import { readStorage, writeStorage } from './ui/storage'
 
 const STEP = 1 / 120
 
 // Move, jump, drop and dash are the only inputs: firing and rites are automatic.
-const KEY_ACTIONS: Record<string, Action> = {
-  Space: 'jump',
-  KeyW: 'jump',
-  ArrowUp: 'jump',
-  KeyS: 'down',
-  ArrowDown: 'down',
-  ShiftLeft: 'dash',
-  ShiftRight: 'dash',
-}
-const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD']
-const GAME_KEYS = new Set([...Object.keys(KEY_ACTIONS), ...MOVE_KEYS])
 const RITES = new Set<string>(['seal', 'volley', 'mirror', 'glyph'])
+const newInput = (): Input => ({ left: false, right: false, down: false, jumpHeld: false, pressed: new Set() })
+/** Endless opens up once a run has reached the Arch-Deacon's second visit. */
+const ENDLESS_FROM = 10
+/** Best score is kept per mode; endless also remembers its deepest sermon. */
+const bestKey = (mode: Mode) => (mode === 'endless' ? 'abc-best-endless' : 'abc-best')
 
 type PauseView = 'menu' | 'controls' | 'settings'
 type Settings = { music: number; effects: number; shake: boolean }
@@ -89,23 +86,31 @@ export default function App() {
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: W, height: H })
   const heldRef = useRef(new Set<string>())
   const touchRef = useRef({ left: false, right: false, down: false, jump: false })
-  const inputRef = useRef<Input>({ left: false, right: false, down: false, jumpHeld: false, pressed: new Set() })
+  const inputsRef = useRef<Input[]>([newInput(), newInput()])
   const phaseRef = useRef<Phase>('title')
+  // Chosen on the title screen: story or endless, one player or two.
+  const [mode, setMode] = useState<Mode>('story')
+  const modeRef = useRef<Mode>('story')
+  const [players, setPlayers] = useState(() => (readStorage('abc-players') === '2' ? 2 : 1))
+  const playersRef = useRef(players)
+  const keyHandlerRef = useRef<(event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'>) => void>(() => {})
 
   const [phase, setPhase] = useState<Phase>('title')
   const [hud, setHud] = useState<HudState>(() => readHud(gameRef.current))
-  const [curse, setCurse] = useState<Curse | null>(null)
-  const [flashing, setFlashing] = useState<Set<AbilityKey>>(new Set())
+  const [curses, setCurses] = useState<Curse[]>([])
+  /** HUD rite icons flashing, as "player:rite". */
+  const [flashing, setFlashing] = useState<Set<string>>(new Set())
   // The first time each rite casts itself (ever), a tip explains what it did.
   const [riteTip, setRiteTip] = useState<AbilityKey | null>(null)
   const seenRitesRef = useRef<Set<string>>(new Set(JSON.parse(readStorage('abc-seen-rites') ?? '[]') as string[]))
   const [offers, setOffers] = useState<Upgrade[]>([])
   const [levels, setLevels] = useState<Record<string, number>>({})
   const [best, setBest] = useState(() => Number(readStorage('abc-best') ?? 0))
+  const [deepestEndless, setDeepestEndless] = useState(() => Number(readStorage('abc-deep-endless') ?? 0))
   const [newBest, setNewBest] = useState(false)
   const [ready, setReady] = useState(false)
   const [touch, setTouch] = useState(false)
-  const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '' })
+  const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '', mode: 'story', players: 1 })
   const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
   const [settings, setSettings] = useState<Settings>(loadSettings)
 
@@ -181,7 +186,7 @@ export default function App() {
     if (!controlsCardRef.current) return
     controlsCardRef.current = false
     setControlsCard(false)
-    writeStorage('abc-seen-controls', '1')
+    writeStorage(gameRef.current.players.length > 1 ? 'abc-seen-coop-controls' : 'abc-seen-controls', '1')
   }, [])
 
   useEffect(() => {
@@ -205,23 +210,32 @@ export default function App() {
     setPhase(next)
   }, [])
 
-  const startGame = useCallback(() => {
+  /** Start a run in the given mode (or the last one chosen), with the chosen number of players. */
+  const startGame = useCallback((chosen?: Mode) => {
     unlockAudio()
     startMusic()
-    const game = makeGame()
+    if (chosen) {
+      modeRef.current = chosen
+      setMode(chosen)
+    }
+    // Touch screens have one set of controls, so they always play alone.
+    const count = window.matchMedia('(pointer: coarse)').matches ? 1 : playersRef.current
+    const game = makeGame({ mode: modeRef.current, players: count })
     game.phase = 'playing'
     startWave(game)
     gameRef.current = game
     narratorRef.current = makeNarrator(ledgerRef.current)
     setLine(null)
-    inputRef.current.pressed.clear()
+    for (const input of inputsRef.current) input.pressed.clear()
     setLevels({})
     setNewBest(false)
-    setCurse(game.curse)
+    setBest(Number(readStorage(bestKey(modeRef.current)) ?? 0))
+    setCurses(game.curses)
     setHud(readHud(game))
     phaseRef.current = 'playing'
     setPhase('playing')
-    if (!readStorage('abc-seen-controls')) {
+    // First run (and first co-op run): a card with the controls.
+    if (!readStorage(count > 1 ? 'abc-seen-coop-controls' : 'abc-seen-controls')) {
       controlsCardRef.current = true
       setControlsCard(true)
     }
@@ -240,19 +254,26 @@ export default function App() {
       chooseUpgrade(game, upgrade)
       setLevels({ ...game.levels })
       setOffers([])
-      setCurse(game.curse)
+      setCurses(game.curses)
       goTo('playing')
     },
     [goTo],
   )
 
-  const press = useCallback((action: Action) => {
-    if (gameRef.current.phase === 'playing') inputRef.current.pressed.add(action)
+  const press = useCallback((action: Action, player = 0) => {
+    if (gameRef.current.phase === 'playing') inputsRef.current[player].pressed.add(action)
   }, [])
 
-  // Keyboard.
+  const endlessOpen = ledger.deepest >= ENDLESS_FROM
+  const choosePlayers = useCallback((count: number) => {
+    playersRef.current = count
+    setPlayers(count)
+    writeStorage('abc-players', String(count))
+  }, [])
+
+  // Keyboard (and gamepad menu presses, which arrive here as the keys they stand for).
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: Pick<KeyboardEvent, 'code' | 'repeat' | 'preventDefault'>) => {
       const game = gameRef.current
       unlockAudio()
       if (GAME_KEYS.has(event.code) && game.phase === 'playing') event.preventDefault()
@@ -272,6 +293,14 @@ export default function App() {
       }
       if (game.phase === 'title' && event.code === 'KeyL' && ledgerRef.current.runs > 0) {
         openLedger()
+        return
+      }
+      if (game.phase === 'title' && event.code === 'KeyE' && ledgerRef.current.deepest >= ENDLESS_FROM) {
+        startGame('endless')
+        return
+      }
+      if (game.phase === 'title' && event.code === 'KeyC') {
+        choosePlayers(playersRef.current === 2 ? 1 : 2)
         return
       }
 
@@ -299,7 +328,7 @@ export default function App() {
       if (event.repeat) return
       heldRef.current.add(event.code)
       // The first-run card fades as soon as the player moves, jumps or dashes.
-      if (game.phase === 'playing' && (KEY_ACTIONS[event.code] || MOVE_KEYS.includes(event.code))) dismissControlsCard()
+      if (game.phase === 'playing' && GAME_KEYS.has(event.code)) dismissControlsCard()
 
       if (game.phase === 'upgrade') {
         const count = game.offers.length
@@ -310,7 +339,7 @@ export default function App() {
         return
       }
 
-      if (event.code === 'Escape' || event.code === 'KeyP') {
+      if (event.code === 'Escape' || event.code === 'KeyP' || event.code === 'Start') {
         togglePause()
         return
       }
@@ -325,13 +354,15 @@ export default function App() {
       if (event.code === 'Enter') {
         if (game.phase === 'title' || game.phase === 'dead' || game.phase === 'won') {
           event.preventDefault()
-          startGame()
+          // From the title, Enter starts the story; after a run, it goes again in the same mode.
+          startGame(game.phase === 'title' ? 'story' : undefined)
         }
         return
       }
-      const action = KEY_ACTIONS[event.code]
-      if (action) press(action)
+      const action = keyAction(event.code)
+      if (action) press(action, keyPlayer(event.code, playersRef.current))
     }
+    keyHandlerRef.current = onKeyDown
     const onKeyUp = (event: KeyboardEvent) => heldRef.current.delete(event.code)
     const onBlur = () => {
       heldRef.current.clear()
@@ -351,7 +382,7 @@ export default function App() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
+  }, [choosePlayers, closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
 
   useEffect(() => {
     if (phase === 'paused') showPauseView('menu')
@@ -378,7 +409,7 @@ export default function App() {
   // Music swells on boss sermons and drops to the soft organ on menus. It never stops,
   // so the upgrade screen between sermons doesn't leave a silent gap.
   useEffect(() => {
-    if (phase === 'playing') setMusicIntensity(hud.wave >= MAX_WAVE ? 2 : isEliteWave(hud.wave) ? 1 : 0.5)
+    if (phase === 'playing') setMusicIntensity(isFinalWave(hud.wave) ? 2 : isEliteWave(hud.wave) ? 1 : 0.5)
     else if (phase === 'upgrade' || phase === 'won') setMusicIntensity(0.5)
     else setMusicIntensity(0.25)
   }, [phase, hud.wave])
@@ -420,25 +451,44 @@ export default function App() {
     let accumulator = 0
     let hudTimer = 0
     let raf = 0
-    const flashTimers = new Map<AbilityKey, number>()
+    const flashTimers = new Map<string, number>()
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame)
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const game = gameRef.current
-      const input = inputRef.current
+      const inputs = inputsRef.current
+      const count = game.players.length
+
+      // Gamepads: in play they drive their player; on menus they press the keys they stand for.
+      const pads = readPads(count)
+      for (const pad of pads) {
+        for (const key of pad.menu) {
+          if (game.phase === 'playing' && key !== 'Start') continue
+          if (key === 'Start' && game.phase !== 'playing' && game.phase !== 'paused') keyHandlerRef.current({ code: 'Enter', repeat: false, preventDefault: () => {} })
+          else keyHandlerRef.current({ code: key, repeat: false, preventDefault: () => {} })
+        }
+      }
 
       if (game.phase === 'playing') {
         const held = heldRef.current
         const touchState = touchRef.current
-        input.left = held.has('ArrowLeft') || held.has('KeyA') || touchState.left
-        input.right = held.has('ArrowRight') || held.has('KeyD') || touchState.right
-        input.down = held.has('ArrowDown') || held.has('KeyS') || touchState.down
-        input.jumpHeld = held.has('Space') || held.has('KeyW') || held.has('ArrowUp') || touchState.jump
+        for (let index = 0; index < count; index += 1) {
+          const input = inputs[index]
+          const keys = heldKeys(held, index, count)
+          const pad = pads.filter((reading) => reading.player === index)
+          const touching = index === 0 ? touchState : { left: false, right: false, down: false, jump: false }
+          input.left = keys.left || touching.left || pad.some((reading) => reading.left)
+          input.right = keys.right || touching.right || pad.some((reading) => reading.right)
+          input.down = keys.down || touching.down || pad.some((reading) => reading.down)
+          input.jumpHeld = keys.jump || touching.jump || pad.some((reading) => reading.jump)
+          for (const reading of pad) for (const action of reading.pressed) input.pressed.add(action)
+          if (pad.some((reading) => reading.pressed.size)) dismissControlsCard()
+        }
         accumulator += dt
         let steps = 0
         while (accumulator >= STEP && steps < 12) {
-          step(game, input, STEP)
+          step(game, inputs, STEP)
           accumulator -= STEP
           steps += 1
           if (game.phase !== 'playing') break
@@ -449,26 +499,26 @@ export default function App() {
         if (narrator.line !== shown) setLine(narrator.line && { ...narrator.line })
       } else {
         accumulator = 0
-        input.pressed.clear()
+        for (const input of inputs) input.pressed.clear()
         if (game.phase !== 'paused') stepAmbient(game, dt)
       }
 
       // Sounds, and a brief flash on the HUD icon of any rite that just cast itself.
       let flashChanged = false
-      for (const sound of game.events) {
-        playSfx(sound)
-        if (RITES.has(sound)) {
-          flashTimers.set(sound as AbilityKey, now + 450)
-          flashChanged = true
-          // Held back while the first-run controls card is up; it'll show on the next cast.
-          if (!seenRitesRef.current.has(sound) && !controlsCardRef.current) {
-            seenRitesRef.current.add(sound)
-            writeStorage('abc-seen-rites', JSON.stringify([...seenRitesRef.current]))
-            setRiteTip(sound as AbilityKey)
-          }
+      for (const sound of game.events) playSfx(sound)
+      game.events.length = 0
+      for (const cast of game.casts) {
+        if (!RITES.has(cast.ability)) continue
+        flashTimers.set(`${cast.player}:${cast.ability}`, now + 450)
+        flashChanged = true
+        // Held back while the first-run controls card is up; it'll show on the next cast.
+        if (!seenRitesRef.current.has(cast.ability) && !controlsCardRef.current) {
+          seenRitesRef.current.add(cast.ability)
+          writeStorage('abc-seen-rites', JSON.stringify([...seenRitesRef.current]))
+          setRiteTip(cast.ability)
         }
       }
-      game.events.length = 0
+      game.casts.length = 0
       for (const [key, until] of flashTimers) {
         if (until < now) {
           flashTimers.delete(key)
@@ -489,15 +539,19 @@ export default function App() {
           offersOpenedAtRef.current = performance.now()
         }
         if (game.phase === 'dead' || game.phase === 'won') {
-          setSummary({ wave: game.wave, kills: game.kills, bestCombo: game.bestCombo, score: game.score, by: game.lastHurtBy })
+          setSummary({ wave: game.wave, kills: game.kills, bestCombo: game.bestCombo, score: game.score, by: game.lastHurtBy, mode: game.mode, players: count })
+          if (game.mode === 'endless' && game.wave > Number(readStorage('abc-deep-endless') ?? 0)) {
+            writeStorage('abc-deep-endless', String(game.wave))
+            setDeepestEndless(game.wave)
+          }
           const run = { wave: game.wave, won: game.phase === 'won', by: game.lastHurtBy }
           setLastWord(epitaph(run, ledgerRef.current))
           const result = recordRun(ledgerRef.current, run)
           saveLedger(result.state)
           setEarned(result.earned)
-          const previous = Number(readStorage('abc-best') ?? 0)
+          const previous = Number(readStorage(bestKey(game.mode)) ?? 0)
           if (game.score > previous) {
-            writeStorage('abc-best', String(game.score))
+            writeStorage(bestKey(game.mode), String(game.score))
             setBest(game.score)
             setNewBest(true)
           }
@@ -594,11 +648,11 @@ export default function App() {
           />
         )}
 
-        {playing && <SermonBanner wave={hud.wave} waveState={hud.waveState} curse={curse} />}
+        {playing && <SermonBanner wave={hud.wave} waveState={hud.waveState} curses={curses} mode={hud.mode} />}
 
         {playing && controlsCard && !touch && (
           <div className="panel controls-card" aria-live="polite">
-            <ControlsList />
+            <ControlsList players={hud.players.length} />
           </div>
         )}
 
@@ -642,7 +696,19 @@ export default function App() {
         )}
 
         {phase === 'title' && !ledgerOpen && (
-          <TitleScreen ready={ready} best={best} ledger={ledger} onStart={startGame} onLedger={openLedger} />
+          <TitleScreen
+            ready={ready}
+            best={Number(readStorage('abc-best') ?? 0)}
+            ledger={ledger}
+            endlessOpen={endlessOpen}
+            endlessFrom={ENDLESS_FROM}
+            deepestEndless={deepestEndless}
+            players={players}
+            touch={touch}
+            onStart={startGame}
+            onLedger={openLedger}
+            onPlayers={choosePlayers}
+          />
         )}
         {phase === 'title' && ledgerOpen && <LedgerScreen ledger={ledger} index={page} onSelect={turnTo} onBack={closeLedger} />}
 
@@ -684,7 +750,7 @@ export default function App() {
             newBest={newBest}
             epitaph={lastWord}
             earned={earned}
-            onRestart={startGame}
+            onRestart={() => startGame()}
             onTitle={() => goTo('title')}
           />
         )}

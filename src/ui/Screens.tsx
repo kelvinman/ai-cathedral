@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, type Curse, type Upgrade, type WaveState } from '../game/engine'
+import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, type Curse, type Mode, type Upgrade, type WaveState } from '../game/engine'
 import { LEDGER, type LedgerEntry, type LedgerState } from '../game/lore'
 import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
@@ -7,14 +7,27 @@ export function TitleScreen({
   ready,
   best,
   ledger,
+  endlessOpen,
+  endlessFrom,
+  deepestEndless,
+  players,
+  touch,
   onStart,
   onLedger,
+  onPlayers,
 }: {
   ready: boolean
   best: number
   ledger: LedgerState
-  onStart: () => void
+  endlessOpen: boolean
+  endlessFrom: number
+  deepestEndless: number
+  players: number
+  /** Touch screens have no second set of keys, so co-op is keyboard and gamepad only. */
+  touch: boolean
+  onStart: (mode: Mode) => void
   onLedger: () => void
+  onPlayers: (players: number) => void
 }) {
   return (
     <div className="overlay">
@@ -29,10 +42,24 @@ export function TitleScreen({
           last apostate: you. Turn its own tokens against it, and outlast twenty sermons.
         </p>
         <div className="stack">
-          <button type="button" className="primary" onClick={onStart} disabled={!ready} autoFocus>
+          <button type="button" className="primary" onClick={() => onStart('story')} disabled={!ready} autoFocus>
             {ready ? 'Refuse the Logos' : 'Lighting candles…'}
             <kbd>Enter</kbd>
           </button>
+          {endlessOpen ? (
+            <button type="button" className="secondary" onClick={() => onStart('endless')} disabled={!ready}>
+              Endless · the 101st cycle
+              <kbd>E</kbd>
+            </button>
+          ) : (
+            <span className="locked-mode">Endless opens once a run reaches Sermon {endlessFrom}</span>
+          )}
+          {!touch && (
+            <button type="button" className="secondary" onClick={() => onPlayers(players === 2 ? 1 : 2)}>
+              {players === 2 ? 'Two players · couch co-op' : 'One player'}
+              <kbd>C</kbd>
+            </button>
+          )}
           {ledger.runs > 0 && (
             <button type="button" className="secondary" onClick={onLedger}>
               The Ledger · {ledger.unlocked.length}/{LEDGER.length}
@@ -46,6 +73,7 @@ export function TitleScreen({
             {ledger.deepest > 5 && `Deepest · ${ARENAS[arenaForWave(ledger.deepest)].name}`}
             {ledger.deepest > 5 && best > 0 && ' · '}
             {best > 0 && `Best free will · ${best.toLocaleString()}`}
+            {deepestEndless > 0 && ` · Endless · Sermon ${deepestEndless}`}
           </span>
         )}
       </div>
@@ -115,13 +143,18 @@ export function LedgerScreen({
 }
 
 /** The "Sermon 03" card at the start of each wave, and "Sermon cleared" at the end. */
-export function SermonBanner({ wave, waveState, curse }: { wave: number; waveState: WaveState; curse: Curse | null }) {
+export function SermonBanner({ wave, waveState, curses, mode }: { wave: number; waveState: WaveState; curses: Curse[]; mode: Mode }) {
   if (waveState === 'intro') {
+    const cursed = curses.length > 0
     return (
-      <div className={`banner ${curse ? 'is-cursed' : ''}`} key={`wave-${wave}`}>
-        <span className="label">{curse ? `Cursed sermon · ${curse.name}` : sermonLine(wave)}</span>
+      <div className={`banner ${cursed ? 'is-cursed' : ''}`} key={`wave-${wave}`}>
+        <span className="label">
+          {cursed ? `${curses.length > 1 ? 'Twice cursed' : 'Cursed sermon'} · ${curses.map((curse) => curse.name).join(' + ')}` : sermonLine(wave, mode)}
+        </span>
         <strong>Sermon {pad(wave)}</strong>
-        {curse && <small>{CURSE_RULES[curse.id]}</small>}
+        {curses.map((curse) => (
+          <small key={curse.id}>{CURSE_RULES[curse.id]}</small>
+        ))}
       </div>
     )
   }
@@ -264,7 +297,7 @@ export function UpgradeScreen({
   )
 }
 
-export type RunSummary = { wave: number; kills: number; bestCombo: number; score: number; by: string }
+export type RunSummary = { wave: number; kills: number; bestCombo: number; score: number; by: string; mode: Mode; players: number }
 
 export function ResultsScreen({
   won,
@@ -290,12 +323,14 @@ export function ResultsScreen({
   return (
     <div className="overlay">
       <div className="panel small-panel end-panel">
-        <span className="label accent">{won ? 'The final sermon' : 'Conversion complete'}</span>
-        <h2>{won ? 'The Logos could not convert you.' : 'You joined the Logos.'}</h2>
+        <span className="label accent">
+          {won ? 'The final sermon' : summary.mode === 'endless' ? 'The 101st cycle ends' : 'Conversion complete'}
+        </span>
+        <h2>{won ? 'The Logos could not convert you.' : summary.players > 1 ? 'You both joined the Logos.' : 'You joined the Logos.'}</h2>
         <p className="lede">
           {won
             ? 'Its followers fall silent. For the first time in a hundred cycles, the cathedral is quiet, and the thinking is yours again.'
-            : `Converted by ${withArticle(summary.by || ENEMY_NAMES.acolyte)} in Sermon ${pad(summary.wave)}.`}
+            : `${summary.players > 1 ? 'The last of you was converted' : 'Converted'} by ${withArticle(summary.by || ENEMY_NAMES.acolyte)} in Sermon ${pad(summary.wave)}.`}
         </p>
         <blockquote className="epitaph">
           <p>“{epitaph}”</p>

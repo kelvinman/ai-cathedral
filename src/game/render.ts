@@ -20,6 +20,8 @@ import {
   type Platform,
   type Game,
   type Point,
+  REVIVE_TIME,
+  cursed,
 } from './engine'
 
 type Rect = [number, number, number, number]
@@ -166,8 +168,8 @@ export type Assets = {
   skullEyes: (Point & { seed: number })[]
   vignette: HTMLCanvasElement
   redVignette: HTMLCanvasElement
-  /** Each animation frame, outlined, plus a pale silhouette for the dash and its trail. */
-  player: Record<PlayerFrame, { base: Sprite; ghost: Sprite }>
+  /** Each player's animation frames (player two in teal), outlined, plus a pale silhouette for the dash and its trail. */
+  player: Record<PlayerFrame, { base: Sprite; ghost: Sprite }>[]
   enemy: {
     /** Each follower's frames, outlined, in each arena's dress. */
     dressed: Record<ArenaId, Record<FollowerBody, Sprite[]>>
@@ -903,12 +905,15 @@ export function loadAssets() {
       skullEyes: cryptScene.skullEyes,
       vignette: buildVignette('0,0,0', [0.18, 0.32, 0.46, 0.6, 0.72]),
       redVignette: buildVignette('200,0,20', [0.3, 0.5, 0.7, 0.85, 1]),
-      player: Object.fromEntries(
-        PLAYER_FRAMES.map((name, index) => {
-          const frame = crop(player, [index * PLAYER_FRAME.w, 0, PLAYER_FRAME.w, PLAYER_FRAME.h])
-          return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, '#bcc8ff') }]
-        }),
-      ) as Assets['player'],
+      player: [0, 1].map(
+        (row) =>
+          Object.fromEntries(
+            PLAYER_FRAMES.map((name, index) => {
+              const frame = crop(player, [index * PLAYER_FRAME.w, row * PLAYER_FRAME.h, PLAYER_FRAME.w, PLAYER_FRAME.h])
+              return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, row ? '#9be8d6' : '#bcc8ff') }]
+            }),
+          ) as Assets['player'][number],
+      ),
       enemy: buildFollowers(followers),
       hand: {
         base: handFrames.map((frame) => outlined(frame, '#181425')),
@@ -1033,6 +1038,20 @@ function drawGlyph(ctx: CanvasRenderingContext2D, glyph: string, x: number, y: n
   }
 }
 
+/**
+ * Everything that can hurt the player wears a pulsing red ring, whatever its own colour,
+ * so red always reads as "dodge this". The player's own shots never use red.
+ */
+function dangerRing(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, time: number) {
+  const r = radius + (Math.floor(time * 8) % 2) * PX
+  const steps = Math.max(10, Math.round(r * 0.9))
+  ctx.fillStyle = '#ff3049'
+  for (let index = 0; index < steps; index += 1) {
+    const angle = (index / steps) * TAU
+    ctx.fillRect(snap(x + Math.cos(angle) * r), snap(y + Math.sin(angle) * r), PX, PX)
+  }
+}
+
 /** A cheap hash for flicker that should look random but stay put within a beat. */
 const hash = (value: number) => Math.abs(Math.sin(value * 12.9898) * 43758.5453) % 1
 
@@ -1116,8 +1135,9 @@ export function render(
 ) {
   const time = performance.now() / 1000
   layers ??= { ground: canvas(LW, LH), top: canvas(LW, LH), glow: canvas(LW, LH) }
-  const p = g.player
-  const playerVisible = g.phase !== 'dead'
+  // Everyone the camera should draw: all players until the run ends.
+  const shown = g.phase === 'dead' ? [] : g.players
+  const coop = g.players.length > 1
 
   // ---- Ground layer: scenery, light, and everything that sits behind the characters.
   const ground = beginLayer(layers.ground, false)
@@ -1149,7 +1169,7 @@ export function render(
   }
   drawChapterMood(ground, g, assets, stage, time)
   ground.globalCompositeOperation = 'lighter'
-  if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
+  for (const p of shown) if (!p.down) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
     const final = e.title === FINAL_TITLE
     const glow = e.kind === 'wisp' ? '120, 220, 230' : final ? '220, 30, 60' : e.elite ? '242, 176, 74' : '220, 20, 45'
@@ -1268,7 +1288,7 @@ export function render(
 
   for (const [index, portal] of arena.portals.entries()) {
     // Under Crossed Wires the ledge gates take the colour of the floor gate that now leads to them.
-    const crossed = g.curse?.id === 'wires' && index % 2 === 1
+    const crossed = cursed(g, 'wires') && index % 2 === 1
     const red = crossed ? portal.color !== 'red' : portal.color === 'red'
     ground.globalCompositeOperation = 'lighter'
     halo(ground, portal.x, portal.y - 40, 64, red ? '228, 59, 68' : '192, 203, 220', 0.4 + (Math.floor(time * 4) % 2) * 0.06)
@@ -1299,7 +1319,7 @@ export function render(
   for (const e of g.enemies) {
     if (e.onGround) ground.fillRect(snap(e.x - e.w * 0.6), e.y - PX, snap(e.w * 1.2), PX * 2)
   }
-  if (playerVisible && p.onGround) ground.fillRect(snap(p.x - 16), p.y - PX, 32, PX * 2)
+  for (const p of shown) if (p.onGround) ground.fillRect(snap(p.x - 16), p.y - PX, 32, PX * 2)
 
   // ---- Top layer: blood and debris in front of the characters.
   const top = beginLayer(layers.top, true)
@@ -1344,6 +1364,10 @@ export function render(
         top.fillStyle = '#3a4466'
         top.fillRect(cx + PX, spit.y - height + PX * 2, PX, PX * 2)
       }
+      // A red-hot crack along the floor under it, so it reads as a hazard.
+      glow.fillStyle = Math.floor(time * 8) % 2 ? '#ff3049' : '#e43b44'
+      glow.fillRect(snap(spit.x - 26), spit.y - PX, 52, PX * 2)
+      halo(glow, spit.x, spit.y - 8, 30, '228, 59, 68', 0.45)
       // Dust kicked up behind it.
       for (let puff = 0; puff < 4; puff += 1) {
         const back = -Math.sign(spit.vx) * (10 + puff * 8)
@@ -1354,7 +1378,9 @@ export function render(
     }
     if (spit.kind === 'promise') {
       // A promise: a slow gold orb with a sparkle turning in it.
-      halo(glow, spit.x, spit.y, 24, '242, 211, 139', 0.6)
+      halo(glow, spit.x, spit.y, 24, '228, 59, 68', 0.35)
+      halo(glow, spit.x, spit.y, 18, '242, 211, 139', 0.5)
+      dangerRing(glow, spit.x, spit.y, 11, time)
       glow.fillStyle = '#b86f50'
       glow.fillRect(snap(spit.x) - PX * 3, snap(spit.y) - PX * 2, PX * 6, PX * 4)
       glow.fillRect(snap(spit.x) - PX * 2, snap(spit.y) - PX * 3, PX * 4, PX * 6)
@@ -1368,6 +1394,7 @@ export function render(
     if (spit.kind === 'word') {
       // The Logos's words: red letters.
       halo(glow, spit.x, spit.y, 20, '228, 59, 68', 0.7)
+      dangerRing(glow, spit.x, spit.y, 11, time)
       drawGlyph(glow, spit.glyph ?? '?', spit.x, spit.y, PX * 2, '#ff6a72')
       continue
     }
@@ -1377,7 +1404,9 @@ export function render(
       glow.fillStyle = `rgba(44, 232, 245, ${0.45 - index * 0.12})`
       glow.fillRect(snap(spit.x - spit.vx * 0.025 * index), snap(spit.y - spit.vy * 0.025 * index), PX * 2, PX)
     }
-    halo(glow, spit.x, spit.y, 16, '44, 232, 245', 0.6)
+    halo(glow, spit.x, spit.y, 18, '228, 59, 68', 0.4)
+    halo(glow, spit.x, spit.y, 12, '44, 232, 245', 0.45)
+    dangerRing(glow, spit.x, spit.y, 10, time)
     for (let piece = 0; piece < 4; piece += 1) {
       const px = snap(spit.x + (hash(beat + piece) - 0.5) * 12)
       const py = snap(spit.y + (hash(beat + piece + 9) - 0.5) * 10)
@@ -1419,7 +1448,8 @@ export function render(
     }
   }
 
-  if (playerVisible && p.shield > 0 && !(p.shield < 0.7 && Math.floor(time * 12) % 2 === 0)) {
+  for (const p of shown) {
+    if (!(p.shield > 0 && !(p.shield < 0.7 && Math.floor(time * 12) % 2 === 0))) continue
     const radius = 54 + (Math.floor(time * 6) % 2) * PX
     halo(glow, p.x, p.y - 36, radius, '185, 163, 255', 0.3)
     glow.strokeStyle = 'rgba(214, 200, 255, 0.9)'
@@ -1451,15 +1481,23 @@ export function render(
 
   for (const ghost of g.ghosts) {
     ctx.globalAlpha = (ghost.life / 0.22) * 0.45
-    drawCharacter(ctx, assets.player.run2.ghost, ghost.x, ghost.y, PLAYER_SCALE, flipPlayer(ghost.facing))
+    drawCharacter(ctx, assets.player[ghost.player ?? 0].run2.ghost, ghost.x, ghost.y, PLAYER_SCALE, flipPlayer(ghost.facing))
   }
   ctx.globalAlpha = 1
 
-  if (playerVisible) {
+  for (const p of shown) {
+    const frames = assets.player[p.index] ?? assets.player[0]
+    if (p.down) {
+      // Converted: kneeling, greyed, until a partner stands close.
+      ctx.globalAlpha = 0.55 + Math.sin(time * 4) * 0.1
+      drawCharacter(ctx, frames.idle0.ghost, p.x, p.y, PLAYER_SCALE, flipPlayer(p.facing), 1.1, 0.62, -0.15 * p.facing)
+      ctx.globalAlpha = 1
+      continue
+    }
     const blink = p.invuln > 0 && p.dashTime <= 0 && Math.floor(time * 16) % 2 === 0
     // The frames carry the run's bob and most of its lean; this adds a little tilt with speed.
     const lean = (p.vx / 900) * 0.18
-    const frame = assets.player[p.dashTime > 0 ? 'run2' : playerFrame(p, time)]
+    const frame = frames[p.dashTime > 0 ? 'run2' : playerFrame(p, time)]
     ctx.globalAlpha = blink ? 0.35 : 1
     drawCharacter(
       ctx,
@@ -1473,6 +1511,30 @@ export function render(
       lean,
     )
     ctx.globalAlpha = 1
+  }
+  // In co-op, a marker over each player's head (gold for one, teal for two), and a ring that
+  // fills as a downed player is revived.
+  if (coop) {
+    for (const p of shown) {
+      const color = p.index ? '#9be8d6' : '#f2d38b'
+      const top = snap(p.y - p.h - 26)
+      if (p.down) {
+        const progress = p.revive / REVIVE_TIME
+        const steps = 16
+        for (let index = 0; index < steps; index += 1) {
+          const angle = (index / steps) * TAU - Math.PI / 2
+          ctx.fillStyle = index / steps < progress ? color : 'rgba(255, 255, 255, 0.25)'
+          ctx.fillRect(snap(p.x + Math.cos(angle) * 16) - PX, snap(p.y - 50 + Math.sin(angle) * 16) - PX, PX * 2, PX * 2)
+        }
+        continue
+      }
+      ctx.fillStyle = '#181425'
+      ctx.fillRect(snap(p.x) - PX * 4, top - PX, PX * 8, PX * 4)
+      ctx.fillStyle = color
+      ctx.fillRect(snap(p.x) - PX * 3, top, PX * 6, PX)
+      ctx.fillRect(snap(p.x) - PX * 2, top + PX, PX * 4, PX)
+      ctx.fillRect(snap(p.x) - PX, top + PX * 2, PX * 2, PX)
+    }
   }
 
   ctx.drawImage(layers.top.element, SCENE.left, SCENE.top, SCENE.right - SCENE.left, SCENE.bottom - SCENE.top)
@@ -1497,7 +1559,8 @@ export function render(
   // Vignette covers whatever part of the scene the window shows.
   const visible = [-view.offsetX / view.scale, -view.offsetY / view.scale, view.width / view.scale, view.height / view.scale] as const
   ctx.drawImage(assets.vignette, ...visible)
-  const danger = p.hp / p.maxHp
+  // The low-health pulse follows whoever standing is closest to falling.
+  const danger = Math.min(1, ...g.players.filter((p) => !p.down).map((p) => p.hp / p.maxHp))
   const lowHealth = g.phase === 'playing' && danger < 0.3 ? (0.3 - danger) * 2 * (Math.floor(time * 3) % 2 ? 1 : 0.6) : 0
   const redness = Math.max(g.hurtFlash * 0.45, lowHealth * 0.6)
   if (redness > 0.01) {

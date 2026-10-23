@@ -359,10 +359,32 @@ const POSES = {
   fall: { front: [14, 8], back: [-22, -20], armFront: [95, -15], armBack: [135, 10], tail: 3, lift: 5, planted: false, quill: 120 },
 }
 
+// Player two (couch co-op) wears the same coat in teal, so the two read apart at a glance.
+const TEAL_COAT = {
+  [COAT[0]]: '#3f8a86',
+  [COAT[1]]: '#2a615f',
+  [COAT[2]]: '#1c4244',
+  [COAT[3]]: '#0d2326',
+  [COAT_BACK[1]]: '#22504f',
+  [COAT_BACK[2]]: '#173638',
+  [COAT_BACK[3]]: '#0b1d20',
+}
+const recolor = (sprite, map) => {
+  const copy = new Sprite(sprite.w, sprite.h)
+  for (let y = 0; y < sprite.h; y += 1) for (let x = 0; x < sprite.w; x += 1) {
+    const color = sprite.get(x, y)
+    if (color) copy.set(x, y, map[color] ?? color)
+  }
+  return copy
+}
+
 const names = Object.keys(POSES)
 const frames = names.map((name) => drawPlayer(POSES[name]))
-writePng('src/assets/player-frames.png', FRAME.w * frames.length, FRAME.h, (x, y) => frames[Math.floor(x / FRAME.w)].get(x % FRAME.w, y))
-console.log(`player-frames.png: ${names.length} frames of ${FRAME.w}×${FRAME.h}: ${names.join(', ')}`)
+const rowsOfPlayers = [frames, frames.map((frame) => recolor(frame, TEAL_COAT))]
+writePng('src/assets/player-frames.png', FRAME.w * frames.length, FRAME.h * 2, (x, y) =>
+  rowsOfPlayers[Math.floor(y / FRAME.h)][Math.floor(x / FRAME.w)].get(x % FRAME.w, y % FRAME.h),
+)
+console.log(`player-frames.png: 2 rows of ${names.length} frames of ${FRAME.w}×${FRAME.h}: ${names.join(', ')}`)
 
 // ---------- Followers ----------
 // Every follower faces right (+x) and stands in a 56×84 frame with its feet on the bottom

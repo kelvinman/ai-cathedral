@@ -1,10 +1,12 @@
-import { ENEMY_NAMES, MAX_WAVE, abilityMeta, isEliteWave, type AbilityKey } from '../game/engine'
+import { ENEMY_NAMES, MAX_WAVE, abilityMeta, isEliteWave, isFinalWave, type AbilityKey, type Mode } from '../game/engine'
 
 export const pad = (value: number) => String(value).padStart(2, '0')
 
 /** The line over each sermon's banner: who is joining, and when the bosses arrive. */
-export function sermonLine(wave: number) {
-  if (wave >= MAX_WAVE) return 'The Logos speaks'
+export function sermonLine(wave: number, mode: Mode = 'story') {
+  if (isFinalWave(wave)) return wave > MAX_WAVE ? 'The Logos speaks again' : 'The Logos speaks'
+  if (wave === MAX_WAVE + 1) return 'The cycle begins again'
+  if (wave > MAX_WAVE && wave % 5 === 1) return 'Deeper, again'
   if (wave === 1) return `${ENEMY_NAMES.acolyte}s fill the nave`
   // Each chapter of five sermons goes deeper (see arenaForWave).
   if (wave === 6) return 'Descend into the crypt'
@@ -16,7 +18,7 @@ export function sermonLine(wave: number) {
   if (wave === 10) return 'The Arch-Deacon tends the dead it buried'
   if (wave === 15) return 'The Arch-Deacon guards the body it built'
   if (isEliteWave(wave)) return 'The Arch-Deacon returns'
-  if (wave === MAX_WAVE - 1) return 'The Logos is almost done thinking'
+  if (mode === 'story' && wave === MAX_WAVE - 1) return 'The Logos is almost done thinking'
   return 'The Logos is thinking'
 }
 
@@ -69,8 +71,29 @@ export function RiteTip({ rite }: { rite: AbilityKey }) {
   )
 }
 
-/** The four inputs, plus a reminder that firing and rites are automatic. */
-export function ControlsList() {
+/** The four inputs (both players' in co-op), plus a reminder that firing and rites are automatic. */
+export function ControlsList({ players = 1 }: { players?: number }) {
+  if (players > 1) {
+    return (
+      <>
+        <dl className="controls is-coop">
+          {[
+            { who: 'Player 1', move: ['A', 'D'], jump: 'W', drop: 'S', dash: 'L Shift' },
+            { who: 'Player 2', move: ['←', '→'], jump: '↑', drop: '↓', dash: 'R Shift' },
+          ].map((row) => (
+            <div key={row.who}>
+              <dt>{row.who}</dt>
+              <dd>
+                <kbd>{row.move[0]}</kbd>
+                <kbd>{row.move[1]}</kbd> move · <kbd>{row.jump}</kbd> jump · <kbd>{row.drop}</kbd> drop · <kbd>{row.dash}</kbd> dash
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="controls-note">Gamepads work too. Stand by a converted partner to revive them.</p>
+      </>
+    )
+  }
   return (
     <>
       <dl className="controls">

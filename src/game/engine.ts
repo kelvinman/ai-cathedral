@@ -8,6 +8,8 @@ export const GROUND_Y = 640
 export const MAX_WAVE = 20
 
 export type Phase = 'title' | 'playing' | 'paused' | 'upgrade' | 'dead' | 'won'
+/** Story ends with the Logos at sermon 20; endless keeps going, chapter after chapter. */
+export type Mode = 'story' | 'endless'
 export type WaveState = 'intro' | 'fight' | 'cleared'
 export type EnemyKind = 'acolyte' | 'zealot' | 'bishop' | 'wisp'
 export type AbilityKey = 'dash' | 'seal' | 'volley' | 'mirror' | 'glyph'
@@ -37,6 +39,8 @@ export type Sfx =
   | 'spit'
   | 'charge'
   | 'slam'
+  | 'down'
+  | 'revive'
 
 export type Point = { x: number; y: number }
 export type Platform = { x: number; y: number; w: number }
@@ -70,6 +74,15 @@ export type Player = Body & {
   fireTimer: number
   squash: number
   runPhase: number
+  /** 0 for player one, 1 for player two in couch co-op. */
+  index: number
+  /** Each player's own dash and rite timers (how long they take is shared: cooldownMax). */
+  cooldowns: Record<AbilityKey, number>
+  /** The surface this player last stood on, for follower pathfinding. */
+  surface: number
+  /** Converted, but not out: kneeling until a partner stands close for REVIVE_TIME. */
+  down: boolean
+  revive: number
 }
 
 export type Enemy = Body & {
@@ -160,7 +173,7 @@ export type Spit = Point & {
   minX?: number
   maxX?: number
 }
-export type Ghost = Point & { facing: 1 | -1; life: number }
+export type Ghost = Point & { facing: 1 | -1; life: number; player?: number }
 export type Stain = Point & { r: number; life: number }
 
 export type Stats = {
@@ -196,8 +209,12 @@ export type Input = {
 
 export type Game = {
   phase: Phase
+  mode: Mode
   time: number
+  /** Player one; the same object as players[0]. */
   player: Player
+  /** One or two players. Upgrades and stats are shared by the team. */
+  players: Player[]
   enemies: Enemy[]
   bolts: Bolt[]
   seals: Seal[]
@@ -209,7 +226,6 @@ export type Game = {
   ghosts: Ghost[]
   stains: Stain[]
   spits: Spit[]
-  cooldowns: Record<AbilityKey, number>
   cooldownMax: Record<AbilityKey, number>
   stats: Stats
   levels: Record<string, number>
@@ -231,12 +247,12 @@ export type Game = {
   hurtFlash: number
   nextId: number
   events: Sfx[]
-  /** The surface the player last stood on, for follower pathfinding. */
-  playerSurface: number
+  /** Dashes and rites cast this frame, and by whom, for the HUD. Cleared by the caller. */
+  casts: { player: number; ability: AbilityKey }[]
   /** Who landed the last hit, for the 'Converted by…' line on the results screen. */
   lastHurtBy: string
-  /** This sermon's twist, if it is cursed. */
-  curse: Curse | null
+  /** This sermon's twists: none, one, or (deep into endless) two at once. */
+  curses: Curse[]
   /** Where this sermon is fought. */
   arena: Arena
 }
@@ -439,6 +455,8 @@ export const BALANCE = {
   /** First sermon with spitting wisps. */
   wispFrom: 2,
   spit: { damage: 12, speed: 300, every: [2.0, 3.2] as const, range: 560 },
+  /** Couch co-op: more followers, each a little tougher, for twice the firepower. */
+  coop: { count: 1.5, hp: 1.25 },
   /** Hype Bishops lob slow promises: easy to see coming, but they hurt. */
   promise: { damage: 8, speed: 170, every: [5, 7] as const, range: 480 },
 }
@@ -585,8 +603,10 @@ export const upgrades: Upgrade[] = [
     description: '+25 max health, and heal 40.',
     max: 6,
     apply: (g) => {
-      g.player.maxHp += 25
-      heal(g, 40)
+      for (const p of g.players) {
+        p.maxHp += 25
+        heal(g, p, 40)
+      }
     },
   },
   {
@@ -643,37 +663,55 @@ const enemyStats: Record<
   wisp: { w: 26, h: 26, hp: 18, speed: 135, damage: 8, kb: 0, score: 120, scale: 1 },
 }
 
-export function makeGame(): Game {
+/** Seconds a partner has to stand by a converted player to bring them back. */
+export const REVIVE_TIME = 2.5
+
+function makePlayer(index: number, x: number): Player {
+  return {
+    x,
+    y: GROUND_Y,
+    vx: 0,
+    vy: 0,
+    w: 28,
+    h: 70,
+    onGround: true,
+    onPlatform: false,
+    dropTimer: 0,
+    portalLock: -1,
+    hp: 100,
+    maxHp: 100,
+    facing: index ? -1 : 1,
+    invuln: 0,
+    shield: 0,
+    coyote: 0,
+    jumpBuffer: 0,
+    airJumps: 1,
+    dashTime: 0,
+    dashDir: 1,
+    dashHits: new Set(),
+    ghostTimer: 0,
+    fireTimer: 0,
+    squash: 0,
+    runPhase: 0,
+    index,
+    cooldowns: { dash: 0, seal: 0, volley: 0, mirror: 0, glyph: 0 },
+    surface: 0,
+    down: false,
+    revive: 0,
+  }
+}
+
+/** Where players stand at the start of a sermon or on arriving in an arena. */
+const startX = (index: number, count: number) => (count > 1 ? W / 2 + (index ? 50 : -50) : W / 2)
+
+export function makeGame({ mode = 'story', players = 1 }: { mode?: Mode; players?: number } = {}): Game {
+  const team = Array.from({ length: players }, (_, index) => makePlayer(index, startX(index, players)))
   return {
     phase: 'title',
+    mode,
     time: 0,
-    player: {
-      x: W / 2,
-      y: GROUND_Y,
-      vx: 0,
-      vy: 0,
-      w: 28,
-      h: 70,
-      onGround: true,
-      onPlatform: false,
-      dropTimer: 0,
-      portalLock: -1,
-      hp: 100,
-      maxHp: 100,
-      facing: 1,
-      invuln: 0,
-      shield: 0,
-      coyote: 0,
-      jumpBuffer: 0,
-      airJumps: 1,
-      dashTime: 0,
-      dashDir: 1,
-      dashHits: new Set(),
-      ghostTimer: 0,
-      fireTimer: 0,
-      squash: 0,
-      runPhase: 0,
-    },
+    player: team[0],
+    players: team,
     enemies: [],
     bolts: [],
     seals: [],
@@ -685,7 +723,6 @@ export function makeGame(): Game {
     ghosts: [],
     stains: [],
     spits: [],
-    cooldowns: { dash: 0, seal: 0, volley: 0, mirror: 0, glyph: 0 },
     cooldownMax: { ...BALANCE.cooldowns },
     stats: {
       moveSpeed: 330,
@@ -719,9 +756,9 @@ export function makeGame(): Game {
     hurtFlash: 0,
     nextId: 1,
     events: [],
-    playerSurface: 0,
+    casts: [],
     lastHurtBy: '',
-    curse: null,
+    curses: [],
     arena: ARENAS.cathedral,
   }
 }
@@ -731,6 +768,8 @@ export function waveTotal(wave: number) {
 }
 
 export const isEliteWave = (wave: number) => wave % 5 === 0
+/** The Logos fights in its giant body every twentieth sermon (once in story, again and again in endless). */
+export const isFinalWave = (wave: number) => wave % MAX_WAVE === 0
 
 const approach = (value: number, target: number, delta: number) =>
   value < target ? Math.min(target, value + delta) : Math.max(target, value - delta)
@@ -809,8 +848,8 @@ function floatText(g: Game, x: number, y: number, text: string, color: string, s
   g.texts.push({ x: x + rand(-8, 8), y, text, color, life: 0.8, maxLife: 0.8, size })
 }
 
-export function heal(g: Game, amount: number) {
-  const p = g.player
+export function heal(g: Game, p: Player, amount: number) {
+  if (p.down) return
   const before = p.hp
   p.hp = Math.min(p.maxHp, p.hp + amount)
   const gained = Math.round(p.hp - before)
@@ -821,9 +860,25 @@ function chest(body: Body): Point {
   return { x: body.x, y: body.y - body.h * 0.55 }
 }
 
-function hurtPlayer(g: Game, amount: number, fromX: number, by: string) {
-  const p = g.player
-  if (p.invuln > 0 || p.dashTime > 0 || p.shield > 0) return
+/** The players still standing. */
+const standing = (g: Game) => g.players.filter((p) => !p.down)
+
+/** The standing player nearest a point: who followers chase, aim at, and home in on. */
+function nearestPlayer(g: Game, from: Point) {
+  let best = g.players.find((p) => !p.down) ?? g.player
+  let bestDistance = Infinity
+  for (const p of standing(g)) {
+    const distance = Math.hypot(p.x - from.x, p.y - from.y)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = p
+    }
+  }
+  return best
+}
+
+function hurtPlayer(g: Game, p: Player, amount: number, fromX: number, by: string) {
+  if (p.down || p.invuln > 0 || p.dashTime > 0 || p.shield > 0) return
   p.hp -= amount
   g.lastHurtBy = by
   p.invuln = 1
@@ -886,14 +941,15 @@ export const CURSE_RULES: Record<CurseId, string> = {
  */
 export const portalExit = (g: Game, index: number) => {
   const pair = g.arena.portals[index].pair
-  return g.curse?.id === 'wires' ? (pair + 2) % 4 : pair
+  return cursed(g, 'wires') ? (pair + 2) % 4 : pair
 }
-const gravityScale = (g: Game) => (g.curse?.id === 'weightless' ? 0.55 : 1)
-const scoreScale = (g: Game) => (g.curse?.id === 'fervour' || g.curse?.id === 'fasting' ? 1.5 : 1)
+export const cursed = (g: Game, id: CurseId) => g.curses.some((curse) => curse.id === id)
+const gravityScale = (g: Game) => (cursed(g, 'weightless') ? 0.55 : 1)
+const scoreScale = (g: Game) => (cursed(g, 'fervour') ? 1.5 : 1) * (cursed(g, 'fasting') ? 1.5 : 1)
 
-function weightedKind(wave: number, curse: Curse | null): EnemyKind {
-  if (curse?.id === 'storm') return 'wisp'
-  if (curse?.id === 'zealotry') return 'zealot'
+function weightedKind(wave: number, g: Game): EnemyKind {
+  if (cursed(g, 'storm')) return 'wisp'
+  if (cursed(g, 'zealotry')) return 'zealot'
   const weights: [EnemyKind, number][] = [
     ['acolyte', 1],
     ['zealot', wave >= 2 ? Math.min(0.9, 0.18 * wave) : 0],
@@ -910,7 +966,7 @@ function weightedKind(wave: number, curse: Curse | null): EnemyKind {
 
 function queueSpawn(g: Game) {
   const elite = isEliteWave(g.wave) && g.spawned === g.waveTotal - 1
-  const kind: EnemyKind = elite ? 'bishop' : weightedKind(g.wave, g.curse)
+  const kind: EnemyKind = elite ? 'bishop' : weightedKind(g.wave, g)
   const p = g.player
   let x: number
   let y: number
@@ -936,11 +992,11 @@ function queueSpawn(g: Game) {
 function spawnEnemy(g: Game, mark: SpawnMark) {
   const base = enemyStats[mark.kind]
   const hpScale = 1 + (g.wave - 1) * BALANCE.hpPerWave
-  const speedScale = (1 + Math.min(0.5, (g.wave - 1) * BALANCE.speedPerWave)) * (g.curse?.id === 'fervour' ? 1.3 : 1)
+  const speedScale = (1 + Math.min(0.5, (g.wave - 1) * BALANCE.speedPerWave)) * (cursed(g, 'fervour') ? 1.3 : 1)
   // The final sermon's boss is the Logos itself, in a giant body.
-  const final = mark.elite && g.wave >= MAX_WAVE
+  const final = mark.elite && isFinalWave(g.wave)
   const eliteScale = final ? 1.9 : mark.elite ? 1.45 : 1
-  const hp = base.hp * hpScale * (final ? 14 : mark.elite ? 5 : 1)
+  const hp = base.hp * hpScale * (final ? 14 : mark.elite ? 5 : 1) * (g.players.length > 1 ? BALANCE.coop.hp : 1)
   g.enemies.push({
     id: g.nextId++,
     kind: mark.kind,
@@ -973,7 +1029,7 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     surface: -1,
     spitCd: rand(1, 2),
     touchCd: 0,
-    facing: mark.x < g.player.x ? 1 : -1,
+    facing: mark.x < nearestPlayer(g, mark).x ? 1 : -1,
     turn: 0,
     turnHold: 0,
     windup: 0,
@@ -993,9 +1049,9 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
 /** Move the fight to another arena: the player starts on the floor and old effects are cleared. */
 function enterArena(g: Game, id: ArenaId) {
   g.arena = ARENAS[id]
-  const p = g.player
-  Object.assign(p, { x: W / 2, y: GROUND_Y, vx: 0, vy: 0, portalLock: -1, dropTimer: 0 })
-  g.playerSurface = 0
+  for (const p of g.players) {
+    Object.assign(p, { x: startX(p.index, g.players.length), y: GROUND_Y, vx: 0, vy: 0, portalLock: -1, dropTimer: 0, surface: 0 })
+  }
   g.seals = []
   g.glyphs = []
   g.pickups = []
@@ -1011,13 +1067,25 @@ export function startWave(g: Game) {
   if (moving) enterArena(g, id)
   g.waveState = 'intro'
   g.waveTimer = 2.2
-  g.waveTotal = waveTotal(g.wave)
+  // Two players face a bigger congregation.
+  g.waveTotal = Math.round(waveTotal(g.wave) * (g.players.length > 1 ? BALANCE.coop.count : 1))
   g.spawned = 0
   g.waveKills = 0
   g.spawnTimer = 0.2
   // Never on boss sermons, or on a sermon that moves arena (its banner announces the move).
-  const cursable = g.wave >= 3 && !isEliteWave(g.wave) && g.wave < MAX_WAVE && !moving
-  g.curse = cursable && Math.random() < 0.25 ? CURSES[Math.floor(Math.random() * CURSES.length)] : null
+  // Deep into endless, a cursed sermon can carry two curses at once.
+  const cursable = g.wave >= 3 && !isEliteWave(g.wave) && !moving
+  const deep = g.mode === 'endless' && g.wave > 25
+  g.curses = []
+  if (cursable && Math.random() < (deep ? 0.4 : 0.25)) {
+    const pool = [...CURSES].sort(() => Math.random() - 0.5)
+    g.curses = pool.slice(0, deep && Math.random() < 0.5 ? 2 : 1)
+  }
+  // A converted partner gets back up for the new sermon.
+  for (const p of g.players) {
+    if (!p.down) continue
+    Object.assign(p, { down: false, revive: 0, hp: Math.ceil(p.maxHp * 0.3), invuln: 1.5 })
+  }
   g.events.push('wave')
 }
 
@@ -1051,8 +1119,7 @@ function nearestEnemy(g: Game, from: Point, range: number) {
 }
 
 /** Rites cast themselves when the moment is right; upgrades make them stronger. */
-function autoRites(g: Game, input: Input) {
-  const p = g.player
+function autoRites(g: Game, p: Player, input: Input) {
   if (p.dashTime > 0) return
   const c = chest(p)
   let touching = 0
@@ -1068,15 +1135,14 @@ function autoRites(g: Game, input: Input) {
     if (distance < 320) crowd += 1
     if (sameLevel && Math.abs(e.x - p.x) < 260 && Math.sign(p.x - e.x) === Math.sign(e.vx)) approaching += 1
   }
-  if (touching && p.invuln <= 0 && p.shield <= 0) triggerAbility(g, 'mirror', input)
-  else if (close >= 2 && p.onGround) triggerAbility(g, 'seal', input)
-  else if (crowd >= 3) triggerAbility(g, 'volley', input)
-  else if (approaching && p.onGround) triggerAbility(g, 'glyph', input)
+  if (touching && p.invuln <= 0 && p.shield <= 0) triggerAbility(g, p, 'mirror', input)
+  else if (close >= 2 && p.onGround) triggerAbility(g, p, 'seal', input)
+  else if (crowd >= 3) triggerAbility(g, p, 'volley', input)
+  else if (approaching && p.onGround) triggerAbility(g, p, 'glyph', input)
 }
 
-function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
-  if (g.cooldowns[ability] > 0) return
-  const p = g.player
+function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
+  if (p.cooldowns[ability] > 0) return
   const c = chest(p)
   if (ability === 'dash') {
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0)
@@ -1109,13 +1175,14 @@ function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
     g.glyphs.push({ x: p.x, y: p.y, r: 95, life: 12, arm: 0.35, fired: false })
     burst(g, p.x, p.y - 6, '#2ca8f0', 18, 200, { glow: true, size: 3 })
   }
-  g.cooldowns[ability] = g.cooldownMax[ability]
+  p.cooldowns[ability] = g.cooldownMax[ability]
   // Rites cast themselves, so name them as they go off.
   if (ability !== 'dash') {
     const meta = abilityMeta[ability]
     floatText(g, p.x, p.y - p.h - 34, meta.label.toUpperCase(), meta.color, 24)
   }
   g.events.push(ability)
+  g.casts.push({ player: p.index, ability })
 }
 
 /** The letters a token bolt can be: the player is writing back at the Logos. */
@@ -1137,8 +1204,7 @@ function fireBolt(g: Game, x: number, y: number, dx: number, dy: number, damageS
   })
 }
 
-function updatePlayer(g: Game, input: Input, dt: number) {
-  const p = g.player
+function updatePlayer(g: Game, p: Player, input: Input, dt: number) {
   const move = (input.right ? 1 : 0) - (input.left ? 1 : 0)
   const wasGrounded = p.onGround
   const landingSpeed = p.vy
@@ -1163,7 +1229,7 @@ function updatePlayer(g: Game, input: Input, dt: number) {
     p.ghostTimer -= dt
     if (p.ghostTimer <= 0) {
       p.ghostTimer = 0.025
-      g.ghosts.push({ x: p.x, y: p.y, facing: p.facing, life: 0.22 })
+      g.ghosts.push({ x: p.x, y: p.y, facing: p.facing, life: 0.22, player: p.index })
     }
     if (p.dashTime <= 0) p.vx = p.dashDir * g.stats.moveSpeed
   } else {
@@ -1224,7 +1290,7 @@ function updatePlayer(g: Game, input: Input, dt: number) {
 
   moveBody(p, dt, g.arena.platforms)
   const playerOn = surfaceAt(p, g.arena.platforms)
-  if (playerOn >= 0) g.playerSurface = playerOn
+  if (playerOn >= 0) p.surface = playerOn
   usePortals(g, p)
   if (p.x < 18 || p.x > W - 18) {
     p.x = Math.max(18, Math.min(W - 18, p.x))
@@ -1257,11 +1323,11 @@ function updatePlayer(g: Game, input: Input, dt: number) {
     g.events.push('shoot')
   }
 
-  for (const key of Object.keys(g.cooldowns) as AbilityKey[]) {
-    g.cooldowns[key] = Math.max(0, g.cooldowns[key] - dt)
+  for (const key of Object.keys(p.cooldowns) as AbilityKey[]) {
+    p.cooldowns[key] = Math.max(0, p.cooldowns[key] - dt)
   }
-  if (input.pressed.has('dash')) triggerAbility(g, 'dash', input)
-  autoRites(g, input)
+  if (input.pressed.has('dash')) triggerAbility(g, p, 'dash', input)
+  autoRites(g, p, input)
 }
 
 function updateWave(g: Game, dt: number) {
@@ -1293,7 +1359,7 @@ function updateWave(g: Game, dt: number) {
   }
   g.waveTimer -= dt
   if (g.waveTimer <= 0) {
-    if (g.wave >= MAX_WAVE) {
+    if (g.mode === 'story' && g.wave >= MAX_WAVE) {
       g.phase = 'won'
     } else {
       rollOffers(g)
@@ -1442,7 +1508,7 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
   }
   if (!canAct) return
   const final = e.title === FINAL_TITLE
-  const p = g.player
+  const p = nearestPlayer(g, e)
   if (e.bossCharge > 0) {
     e.bossCharge -= dt
     if (e.bossCharge > 0) return
@@ -1504,8 +1570,9 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
 }
 
 function updateEnemies(g: Game, dt: number) {
-  const p = g.player
   for (const e of g.enemies) {
+    // Each follower goes after whichever player is nearest and still standing.
+    const p = nearestPlayer(g, e)
     e.flash = Math.max(0, e.flash - dt)
     e.slow = Math.max(0, e.slow - dt)
     e.rooted = Math.max(0, e.rooted - dt)
@@ -1568,7 +1635,7 @@ function updateEnemies(g: Game, dt: number) {
         e.vx = approach(e.vx, 0, 2400 * dt)
       } else if (canAct && e.lunge <= 0) {
         const gravity = GRAVITY * gravityScale(g)
-        const plan = planRoute(g.arena.surfaces, e, g.playerSurface, target.x, gravity)
+        const plan = planRoute(g.arena.surfaces, e, p.surface, target.x, gravity)
         const toTarget = plan.moveX - e.x
         const targetVx = Math.abs(toTarget) < 6 ? 0 : Math.sign(toTarget) * e.speed * slowFactor
         // A climbing leap keeps its speed and direction until it lands; re-steering
@@ -1576,7 +1643,7 @@ function updateEnemies(g: Game, dt: number) {
         if (e.onGround) e.leaping = false
         if (!e.leaping) e.vx = approach(e.vx, targetVx, (e.onGround ? 1500 : 150) * dt)
         if (e.onGround && e.jumpCd <= 0) {
-          if (e.kind === 'zealot' && e.surface === g.playerSurface && Math.abs(dx) < 280 && Math.abs(dx) > 60) {
+          if (e.kind === 'zealot' && e.surface === p.surface && Math.abs(dx) < 280 && Math.abs(dx) > 60) {
             e.windup = 0.38
             e.windupDir = Math.sign(dx) || 1
             e.jumpCd = rand(1.6, 2.4)
@@ -1645,7 +1712,8 @@ function updateEnemies(g: Game, dt: number) {
       }
     }
 
-    if (overlaps(e, p)) {
+    for (const p of standing(g)) {
+      if (!overlaps(e, p)) continue
       if (p.shield > 0) {
         if (e.touchCd <= 0) {
           e.touchCd = 0.35
@@ -1659,7 +1727,7 @@ function updateEnemies(g: Game, dt: number) {
           damageEnemy(g, e, g.stats.damage * 0.8, p.dashDir, 300)
         }
       } else if (e.stun <= 0) {
-        hurtPlayer(g, e.damage, e.x, e.title ?? ENEMY_NAMES[e.kind])
+        hurtPlayer(g, p, e.damage, e.x, e.title ?? ENEMY_NAMES[e.kind])
       }
     }
   }
@@ -1712,7 +1780,6 @@ function updateBolts(g: Game, dt: number) {
 }
 
 function updateSpits(g: Game, dt: number) {
-  const p = g.player
   for (const spit of g.spits) {
     spit.x += spit.vx * dt
     spit.y += spit.vy * dt
@@ -1720,14 +1787,15 @@ function updateSpits(g: Game, dt: number) {
     if (spit.kind !== 'wave' && spit.y > GROUND_Y) spit.life = 0
     if (spit.minX !== undefined && spit.maxX !== undefined && (spit.x < spit.minX || spit.x > spit.maxX)) spit.life = 0
     // A wave only catches you if your feet are on its surface: jump it.
-    const hit =
-      spit.kind === 'wave'
-        ? Math.abs(spit.x - p.x) < p.w / 2 + 10 && Math.abs(p.y - spit.y) < 12
-        : Math.abs(spit.x - p.x) < p.w / 2 + 6 && spit.y > p.y - p.h && spit.y < p.y
-    if (hit && spit.life > 0) {
+    for (const p of standing(g)) {
+      const hit =
+        spit.kind === 'wave'
+          ? Math.abs(spit.x - p.x) < p.w / 2 + 10 && Math.abs(p.y - spit.y) < 12
+          : Math.abs(spit.x - p.x) < p.w / 2 + 6 && spit.y > p.y - p.h && spit.y < p.y
+      if (!hit || spit.life <= 0) continue
       spit.life = 0
       if (p.shield > 0) burst(g, spit.x, spit.y, '#b9a3ff', 8, 200, { glow: true })
-      else hurtPlayer(g, spit.damage, spit.x, spit.by)
+      else hurtPlayer(g, p, spit.damage, spit.x, spit.by)
     }
     // Shards scatter into pixels, promises pop into gold sparkle, words crumble, stone settles.
     if (spit.life <= 0) {
@@ -1789,9 +1857,10 @@ function updateZones(g: Game, dt: number) {
 }
 
 function updatePickups(g: Game, dt: number) {
-  const p = g.player
   for (const pickup of g.pickups) {
     pickup.life -= dt
+    // Drifts to whoever is closest; in co-op, whoever needs it least can step aside.
+    const p = nearestPlayer(g, pickup)
     const c = chest(p)
     const distance = Math.hypot(c.x - pickup.x, c.y - pickup.y)
     if (distance < 120 && pickup.life < 9.6) {
@@ -1806,7 +1875,7 @@ function updatePickups(g: Game, dt: number) {
     }
     if (distance < 30) {
       pickup.life = 0
-      heal(g, pickup.heal)
+      heal(g, p, pickup.heal)
       burst(g, c.x, c.y, '#8df0a8', 14, 200, { glow: true, size: 2.5 })
       g.events.push('pickup')
     }
@@ -1845,8 +1914,8 @@ function resolveDeaths(g: Game) {
     }
     if (g.stains.length > 60) g.stains.shift()
     floatText(g, c.x, e.y - e.h - 18, `+${points}`, '#f2d38b', 20)
-    if (g.stats.lifesteal) heal(g, g.stats.lifesteal)
-    const dropChance = g.curse?.id === 'fasting' ? 0 : e.elite ? 1 : big ? 0.45 : 0.08
+    if (g.stats.lifesteal) for (const p of standing(g)) heal(g, p, g.stats.lifesteal)
+    const dropChance = cursed(g, 'fasting') ? 0 : e.elite ? 1 : big ? 0.45 : 0.08
     if (Math.random() < dropChance) {
       g.pickups.push({
         x: c.x,
@@ -1895,8 +1964,40 @@ function updateEffects(g: Game, dt: number) {
   g.stains = g.stains.filter((stain) => stain.life > 0)
 }
 
-/** Advance the simulation by one fixed step. Consumes `input.pressed`. */
-export function step(g: Game, input: Input, dt: number) {
+/** Downed players: a partner standing close brings them back; when everyone is down, the run ends. */
+function updateRevives(g: Game, dt: number) {
+  for (const p of g.players) {
+    if (p.down || p.hp > 0) continue
+    if (standing(g).length > 1) {
+      Object.assign(p, { down: true, revive: 0, hp: 0, vx: 0, shield: 0, dashTime: 0 })
+      g.trauma = Math.min(1, g.trauma + 0.6)
+      const c = chest(p)
+      burst(g, c.x, c.y, '#8f0d18', 40, 420, { gravity: 1400, size: 4, life: 0.9 })
+      g.events.push('down')
+    }
+  }
+  for (const p of g.players) {
+    if (!p.down) continue
+    // Kneeling: still falls to the floor of whatever it was standing on.
+    p.vy = Math.min(1150, p.vy + GRAVITY * gravityScale(g) * dt)
+    moveBody(p, dt, g.arena.platforms)
+    const helper = standing(g).find((other) => Math.abs(other.x - p.x) < 70 && Math.abs(other.y - p.y) < 60)
+    p.revive = helper ? p.revive + dt : Math.max(0, p.revive - dt * 0.5)
+    if (p.revive >= REVIVE_TIME) {
+      Object.assign(p, { down: false, revive: 0, hp: Math.ceil(p.maxHp * 0.4), invuln: 2 })
+      burst(g, p.x, p.y - 40, '#f2d38b', 30, 300, { glow: true, size: 3 })
+      floatText(g, p.x, p.y - p.h - 20, 'REVIVED', '#f2d38b', 26)
+      g.events.push('revive')
+    }
+  }
+}
+
+/**
+ * Advance the simulation by one fixed step. Takes one input per player (or a single input
+ * for player one) and consumes their `pressed` sets.
+ */
+export function step(g: Game, inputs: Input | Input[], dt: number) {
+  const list = Array.isArray(inputs) ? inputs : [inputs]
   g.trauma = Math.max(0, g.trauma - dt * 1.8)
   g.hurtFlash = Math.max(0, g.hurtFlash - dt * 2.5)
   if (g.hitstop > 0) {
@@ -1909,8 +2010,11 @@ export function step(g: Game, input: Input, dt: number) {
     if (g.comboTimer <= 0) g.combo = 0
   }
 
-  updatePlayer(g, input, dt)
-  input.pressed.clear()
+  for (const p of g.players) {
+    const input = list[p.index] ?? list[0]
+    if (!p.down) updatePlayer(g, p, input, dt)
+    input.pressed.clear()
+  }
   updateWave(g, dt)
   updateMarks(g, dt)
   updateEnemies(g, dt)
@@ -1921,11 +2025,13 @@ export function step(g: Game, input: Input, dt: number) {
   updatePickups(g, dt)
   updateEffects(g, dt)
 
-  if (g.player.hp <= 0 && g.phase === 'playing') {
-    g.player.hp = 0
+  updateRevives(g, dt)
+  const last = g.players.find((p) => !p.down && p.hp <= 0)
+  if (last && g.phase === 'playing') {
+    last.hp = 0
     g.phase = 'dead'
     g.trauma = 1
-    const c = chest(g.player)
+    const c = chest(last)
     burst(g, c.x, c.y, '#8f0d18', 60, 520, { gravity: 1400, size: 4, life: 1 })
     g.events.push('death')
   }

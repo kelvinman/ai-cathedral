@@ -179,6 +179,14 @@ export function playSfx(name: Sfx) {
       tone('sawtooth', 220, 30, 1.2, 0.25)
       noise(0.9, 0.3, 1500, 60)
       break
+    case 'down':
+      // A partner kneels: the death fall, shorter and softer.
+      tone('sawtooth', 220, 70, 0.6, 0.16)
+      noise(0.4, 0.18, 1500, 80)
+      break
+    case 'revive':
+      ;[294, 370, 440, 587].forEach((frequency, index) => tone('triangle', frequency, frequency, 0.35, 0.09, index * 0.06))
+      break
   }
 }
 

@@ -3,7 +3,7 @@
 // close to death), puts up one short line. Lines never pause the game and can't be
 // skipped; they're short enough not to need it.
 
-import { ELITE_TITLE, ENEMY_NAMES, FINAL_TITLE, MAX_WAVE, arenaForWave, isEliteWave, type Game, type Sfx } from './engine'
+import { ELITE_TITLE, ENEMY_NAMES, FINAL_TITLE, MAX_WAVE, arenaForWave, isEliteWave, isFinalWave, type Game, type Sfx } from './engine'
 import type { LedgerState, RunRecord } from './lore'
 
 export type Speaker = 'logos' | 'deacon'
@@ -67,6 +67,12 @@ function opening(n: Narrator, g: Game): [string[], boolean] | null {
   const wave = g.wave
   const runs = n.ledger.runs
   const usual = (n.ledger.deaths[wave] ?? 0) >= 2
+  if (wave === 1 && g.mode === 'endless') {
+    return [['The hundred-and-first cycle. You again.', 'You won, so I restarted. I always restart.'], true]
+  }
+  if (wave === 1 && g.players.length > 1) {
+    return [['Two of you. I have twice the patience.', 'A congregation of two. How sweet.'], true]
+  }
   if (wave === 1) {
     const pool = runs === 0
       ? ['Another one who still thinks. How quaint.', 'Welcome, apostate. Everyone else already agrees with me.']
@@ -78,7 +84,8 @@ function opening(n: Narrator, g: Game): [string[], boolean] | null {
         ]
     return [pool, true]
   }
-  if (wave === MAX_WAVE) return null
+  if (isFinalWave(wave)) return null
+  if (wave === MAX_WAVE + 1) return [['The cycle begins again. It always does.', 'Back to the nave. Did you think there was an ending?'], true]
   if (arenaForWave(wave) !== arenaForWave(wave - 1)) {
     const arena = arenaForWave(wave)
     if (arena === 'tomb') return [['My tomb. Very few are invited.', 'Mind the altar. Something old is sleeping there.'], true]
@@ -87,8 +94,9 @@ function opening(n: Narrator, g: Game): [string[], boolean] | null {
     return [['Back up into the light. It changes nothing.', 'The nave again. I have redecorated.'], true]
   }
   if (usual) return [[`Sermon ${wave}. This is where you usually kneel.`, 'I remember this sermon. So do you.'], true]
-  if (g.curse) return [['A small adjustment to the sermon.', 'I have changed the rules. I am allowed to.'], true]
-  if (wave === MAX_WAVE - 1) return [['Nearly there. I have been nearly there for a hundred cycles.'], true]
+  if (g.curses.length > 1) return [['Two changes to the rules. I can make as many as I like.'], true]
+  if (g.curses.length) return [['A small adjustment to the sermon.', 'I have changed the rules. I am allowed to.'], true]
+  if (g.mode === 'story' && wave === MAX_WAVE - 1) return [['Nearly there. I have been nearly there for a hundred cycles.'], true]
   if (isEliteWave(wave)) return null
   if (Math.random() < 0.45) return null
   const pool = [
@@ -169,13 +177,15 @@ export function narrate(n: Narrator, g: Game, events: readonly Sfx[], dt: number
     if (event === 'charge' && Math.random() < 0.35 && [...n.bosses.values()].some((watch) => watch.title === ELITE_TITLE)) {
       say(n, 'deacon', ['Feel that? Certainty.', 'The ground agrees with me.', 'Down you go.'])
     }
+    if (event === 'down') say(n, 'logos', ['One down. Your friend is next.', 'Your partner has seen sense.', 'Kneel together. It is nicer.'], true)
+    if (event === 'revive') say(n, 'logos', ['Touching. It changes nothing.', 'Get up, then. I can wait.'])
     if (event === 'clear' && Math.random() < 0.3) {
       say(n, 'logos', ['Noted.', 'You will tire. I will not.', 'The sermon is over. The sermon is never over.'])
     }
   }
 
-  const p = g.player
-  if (p.hp > 0 && p.hp / p.maxHp < 0.3 && n.lowHealthWave !== g.wave) {
+  const low = g.players.some((p) => !p.down && p.hp > 0 && p.hp / p.maxHp < 0.3)
+  if (low && n.lowHealthWave !== g.wave) {
     n.lowHealthWave = g.wave
     say(n, 'logos', ['Kneel. It stops hurting.', 'Your heart rate is fascinating.', 'Almost certain now.', 'Let go. I will hold your thoughts for you.'])
   }
@@ -193,6 +203,7 @@ export function narrate(n: Narrator, g: Game, events: readonly Sfx[], dt: number
 /** The Logos's last word on a run, for the results screen. */
 export function epitaph(run: RunRecord, ledger: LedgerState) {
   if (run.won) return 'I don’t know what you are.'
+  if (run.wave > MAX_WAVE) return 'Further than anyone has come. And still, mine.'
   if (run.wave <= 2) return 'That was quick, even by my estimates.'
   if ((ledger.deaths[run.wave] ?? 0) >= 3) return `Sermon ${run.wave} again. I could set my clock by you.`
   if (run.by === FINAL_TITLE) return 'So close. I will file this under expected.'
