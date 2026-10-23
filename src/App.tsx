@@ -824,9 +824,10 @@ export default function App() {
     { label: 'Save and credits…', key: '', style: 'secondary', run: () => showPauseView('extras') },
     { label: 'Back', key: 'Esc', style: 'ghost', run: menuBack },
   ]
+  // Two columns: player 1's keys on the left, player 2's on the right, row by row.
   const keysItems: MenuItem[] = [
-    ...[0, 1].flatMap((player) =>
-      BINDINGS.map((binding) => ({
+    ...BINDINGS.flatMap((binding) =>
+      [0, 1].map((player) => ({
         label:
           capture?.player === player && capture.binding === binding
             ? `P${player + 1} ${BINDING_NAMES[binding]} · press a key…`

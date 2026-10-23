@@ -871,9 +871,21 @@
   border: 0;
 }
 
-/* Long menus (Settings, Keys): shorter rows so they fit. */
+/* Long menus (Settings, Keys): two columns of shorter rows, so they fit on a laptop screen. */
+.small-panel.is-dense {
+  width: min(640px, 100%);
+}
+
 .small-panel.is-dense .stack {
-  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  gap: 4px;
+}
+
+@media (max-width: 560px) {
+  .small-panel.is-dense .stack {
+    grid-template-columns: 1fr;
+  }
 }
 
 .small-panel.is-dense .primary,
@@ -958,12 +970,73 @@
   }
 }
 
-.controls-panel {
-  width: min(560px, 100%);
-}
-
 .controls-panel .controls {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* The pause menu's Controls page: rites in two columns so the page fits. */
+.controls-panel {
+  width: min(760px, 100%);
+}
+
+.controls-panel .rites {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .controls-panel .rites {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Laptop-height windows: the title drops its emblem and tightens up, and the Controls
+   page packs its rites closer. */
+@media (max-height: 860px) {
+  .controls-panel {
+    gap: 8px;
+  }
+
+  .controls-panel .rites li {
+    padding: 4px 8px;
+  }
+
+  .controls-panel .rites span {
+    font-size: 16px;
+  }
+
+  .controls-panel .rites small {
+    font-size: 14px;
+  }
+
+  .title-panel .sigil {
+    display: none;
+  }
+
+  .title-panel {
+    gap: 10px;
+  }
+
+  .title-panel h1 {
+    font-size: clamp(40px, 6vw, 56px);
+  }
+
+  .title-panel .lede {
+    font-size: 19px;
+  }
+
+  .title-panel .primary,
+  .title-panel .secondary,
+  .title-panel .ghost {
+    min-height: 46px;
+  }
+
+  .title-panel .ghost {
+    min-height: 36px;
+  }
+
+  .mode-button small {
+    font-size: 15px;
+  }
 }
 
 /* Co-op controls: one row per player. */
