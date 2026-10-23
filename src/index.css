@@ -1,0 +1,997 @@
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Silkscreen&family=VT323&display=swap');
+@import 'tailwindcss';
+
+/*
+ * Pixel-art UI. Colours come from the sprite sheet's palette (Endesga 32), frames are
+ * 9-sliced from public/ui/*.png (made from the sheet's framed brick block by
+ * scripts/generate-cathedral-sprites.mjs), and every UI pixel is drawn 3px wide.
+ */
+
+@layer base {
+  :root {
+    --px: 3px;
+    --ink: #181425;
+    --stone0: #262b44;
+    --stone1: #3a4466;
+    --stone2: #5a6988;
+    --stone3: #8b9bb4;
+    --stone4: #c0cbdc;
+    --wood0: #3f2832;
+    --wood1: #743f39;
+    --gold0: #b86f50;
+    --gold1: #e4a672;
+    --cream: #ead4aa;
+    --blood0: #792831;
+    --blood1: #9e2835;
+    --blood2: #be353d;
+    --blood3: #e43b44;
+    --rose: #c55c6b;
+    --display: 'Pixelify Sans', monospace;
+    --label: 'Silkscreen', monospace;
+    --pixel: 'VT323', monospace;
+    --shadow: calc(var(--px) * 0.67) calc(var(--px) * 0.67) 0 var(--ink);
+  /* Anything sitting inside a framed panel is an inset stone tile rather than another
+     frame: dark slab, shadow on the top and left, highlight on the bottom and right. */
+  --inset:
+    inset var(--px) var(--px) 0 var(--ink),
+    inset calc(var(--px) * -1) calc(var(--px) * -1) 0 var(--stone1);
+    color-scheme: dark;
+    font-family: var(--pixel);
+    color: var(--cream);
+    background: #050307;
+    font-synthesis: none;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #050307;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    background: none;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  :focus-visible {
+    outline: var(--px) solid var(--gold1);
+    outline-offset: var(--px);
+  }
+
+  kbd {
+    display: inline-grid;
+    min-width: 24px;
+    height: 24px;
+    place-items: center;
+    padding: 0 5px;
+    border: 2px solid var(--ink);
+    background: var(--stone1);
+    box-shadow:
+      inset 0 2px 0 var(--stone2),
+      inset 0 -3px 0 var(--stone0);
+    font-family: var(--pixel);
+    font-size: 18px;
+    line-height: 1;
+    color: var(--cream);
+    text-shadow: none;
+  }
+}
+
+/* ---------- Shared frames ---------- */
+
+.panel,
+.card,
+.primary,
+.secondary,
+.ghost,
+.touch-button,
+.stats div {
+  image-rendering: pixelated;
+}
+
+.panel {
+  border: calc(var(--px) * 8) solid transparent;
+  border-image: url('/ui/panel.png') 8 fill / calc(var(--px) * 8) repeat;
+}
+
+.label {
+  font-family: var(--label);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--stone3);
+}
+
+.label.accent {
+  color: var(--blood3);
+}
+
+.label.subtle {
+  color: var(--stone2);
+}
+
+/* ---------- Stage ---------- */
+
+.game {
+  position: fixed;
+  inset: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.game.is-playing canvas {
+  cursor: none;
+}
+
+/* ---------- HUD: unframed, Hollow Knight style. Orb, health pips and abilities in the
+   top-left corner; sermon at top centre; score at top right. Everything is outlined in
+   ink so it reads over the scene. ---------- */
+
+.hud {
+  --outline:
+    2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 2px 0 var(--ink), 0 -2px 0 var(--ink),
+    2px 2px 0 var(--ink), -2px 2px 0 var(--ink), 2px -2px 0 var(--ink), -2px -2px 0 var(--ink);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.corner {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* Combo orb: empty glass, gold liquid clipped a whole sprite row at a time, ring on top. */
+.orb {
+  --orb-px: 2px;
+  position: relative;
+  flex: none;
+  width: calc(var(--orb-px) * 40);
+  height: calc(var(--orb-px) * 40);
+  background: url('/ui/orb-empty.png') 0 0 / 100% 100%;
+  image-rendering: pixelated;
+}
+
+.orb-fill,
+.orb-frame {
+  position: absolute;
+  inset: 0;
+  background: 0 0 / 100% 100%;
+  image-rendering: pixelated;
+}
+
+.orb-fill {
+  background-image: url('/ui/orb-fill-gold.png');
+  clip-path: inset(calc(var(--fill-top) * var(--orb-px)) 0 0 0);
+}
+
+.orb-frame {
+  background-image: url('/ui/orb-frame.png');
+}
+
+.orb b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--pixel);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--cream);
+  text-shadow: var(--outline);
+  animation: pop 240ms steps(3);
+}
+
+@keyframes pop {
+  from {
+    transform: scale(1.4);
+  }
+}
+
+.corner-stack {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.health-pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-width: 330px;
+}
+
+.health-pips i {
+  width: 27px;
+  height: 36px;
+  background: url('/ui/pip-empty.png') 0 0 / 100% 100%;
+  image-rendering: pixelated;
+}
+
+.health-pips i.is-full {
+  background-image: url('/ui/pip-full.png');
+}
+
+.health-pips.is-low i.is-full:last-of-type,
+.health-pips.is-low i.is-full:nth-last-child(1 of .is-full) {
+  animation: blink 0.5s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    filter: brightness(1.8);
+  }
+}
+
+.sermon-title {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.sermon-title span {
+  font-family: var(--label);
+  font-size: 16px;
+  text-transform: uppercase;
+  color: var(--cream);
+  text-shadow: var(--outline);
+}
+
+.sermon-progress {
+  position: relative;
+  width: 150px;
+  height: 8px;
+  border: 2px solid var(--ink);
+  background: var(--stone0);
+}
+
+.sermon-progress i {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--cream) 0 2px, var(--gold1) 2px);
+  transform-origin: left center;
+  transition: transform 180ms steps(4);
+}
+
+.score {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  font-family: var(--pixel);
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--gold1);
+  text-shadow: var(--outline);
+}
+
+.pause-button {
+  position: absolute;
+  top: max(60px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 10px solid transparent;
+  border-image: url('/ui/button-stone.png') 5 fill / 10px repeat;
+  image-rendering: pixelated;
+  font-size: 12px;
+  color: var(--cream);
+  pointer-events: auto;
+}
+
+.abilities {
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.ability {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  background: rgba(38, 43, 68, 0.85);
+  box-shadow: inset 0 0 0 2px var(--stone1);
+  touch-action: none;
+}
+
+.ability.is-ready {
+  box-shadow: inset 0 0 0 2px var(--gold1);
+}
+
+.ability:active {
+  translate: 0 2px;
+}
+
+.ability-icon {
+  display: grid;
+  place-items: center;
+  opacity: 0.35;
+  transform: scale(0.8);
+}
+
+.ability.is-ready .ability-icon {
+  opacity: 1;
+}
+
+.ability-fill {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 20, 37, 0.75);
+  transform-origin: bottom center;
+}
+
+.ability-timer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--pixel);
+  font-size: 24px;
+  color: var(--cream);
+  text-shadow: var(--outline);
+}
+
+.ability-key {
+  position: absolute;
+  right: 3px;
+  bottom: 0;
+  font-family: var(--pixel);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--stone4);
+  text-shadow: var(--outline);
+}
+
+.atlas-icon {
+  display: block;
+  background-image: url('/gothic-sprites.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.dash-icon {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  shape-rendering: crispEdges;
+}
+
+/* A full-width band, like an old console "STAGE 1" card, so the text never sits on the scene. */
+.banner {
+  position: absolute;
+  top: 34%;
+  left: 0;
+  right: 0;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 16px 22px;
+  border-block: var(--px) solid var(--ink);
+  background: rgba(24, 20, 37, 0.9);
+  box-shadow:
+    inset 0 var(--px) 0 var(--wood1),
+    inset 0 calc(var(--px) * -1) 0 var(--wood1),
+    inset 0 calc(var(--px) * 2) 0 var(--gold0),
+    inset 0 calc(var(--px) * -2) 0 var(--gold0);
+  pointer-events: none;
+  text-align: center;
+  animation: banner 2.2s steps(22) both;
+}
+
+.banner strong {
+  font-family: var(--display);
+  font-size: clamp(44px, 7vw, 76px);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cream);
+  text-shadow: calc(var(--px) * 1.5) calc(var(--px) * 1.5) 0 var(--blood0);
+}
+
+.banner .label {
+  font-size: 12px;
+  color: var(--blood3);
+  white-space: nowrap;
+  text-shadow: none;
+}
+
+.banner.is-cleared strong {
+  color: var(--gold1);
+  text-shadow: calc(var(--px) * 1.5) calc(var(--px) * 1.5) 0 var(--wood1);
+}
+
+.banner.is-cleared .label {
+  color: var(--stone3);
+}
+
+@keyframes banner {
+  0% {
+    opacity: 0;
+    clip-path: inset(50% 0);
+  }
+  10% {
+    opacity: 1;
+    clip-path: inset(0 0);
+  }
+  85% {
+    opacity: 1;
+    clip-path: inset(0 0);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(50% 0);
+  }
+}
+
+/* ---------- Overlays ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  /* Checkerboard dither instead of a blur. */
+  background: repeating-conic-gradient(rgba(24, 20, 37, 0.9) 0 25%, rgba(24, 20, 37, 0.68) 0 50%) 0 0 / 6px 6px;
+  animation: appear 200ms steps(2);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+.panel {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(620px, 100%);
+  padding: 12px 18px 8px;
+  text-align: center;
+  text-shadow: var(--shadow);
+  animation: drop 260ms steps(4);
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-24px);
+  }
+}
+
+.panel h1,
+.panel h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.panel h1 {
+  font-size: clamp(42px, 7vw, 68px);
+  text-shadow:
+    var(--px) var(--px) 0 var(--ink),
+    calc(var(--px) * 2) calc(var(--px) * 2) 0 var(--blood0);
+}
+
+.panel h1 em {
+  font-style: normal;
+  color: var(--blood3);
+}
+
+.panel h2 {
+  font-size: clamp(32px, 5vw, 44px);
+}
+
+.lede {
+  max-width: 44ch;
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--stone4);
+  text-wrap: pretty;
+}
+
+/* The rose window from the cathedral sheet, as the title emblem. */
+.sigil {
+  width: 96px;
+  height: 96px;
+  background: url('/cathedral-sprites.png') -128px -16px no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(var(--px) var(--px) 0 var(--ink));
+}
+
+.primary,
+.secondary,
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 12px;
+  font-family: var(--label);
+  font-size: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: var(--shadow);
+}
+
+.primary {
+  border: calc(var(--px) * 5) solid transparent;
+  border-image: url('/ui/button.png') 5 fill / calc(var(--px) * 5) repeat;
+  color: var(--cream);
+}
+
+.secondary {
+  border: calc(var(--px) * 5) solid transparent;
+  border-image: url('/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
+  color: var(--cream);
+}
+
+.ghost {
+  border: calc(var(--px) * 5) solid transparent;
+  color: var(--stone3);
+}
+
+@media (hover: hover) {
+  .primary:not(:disabled):hover {
+    border-image-source: url('/ui/button-hover.png');
+  }
+
+  .secondary:hover {
+    border-image-source: url('/ui/button-stone-hover.png');
+  }
+
+  .ghost:hover {
+    color: var(--cream);
+  }
+}
+
+.primary:not(:disabled):active {
+  border-image-source: url('/ui/button-down.png');
+  padding-top: calc(var(--px) * 2);
+}
+
+.secondary:active {
+  border-image-source: url('/ui/button-stone-down.png');
+  padding-top: calc(var(--px) * 2);
+}
+
+.primary:disabled {
+  filter: grayscale(0.7) brightness(0.7);
+}
+
+.primary kbd {
+  background: var(--blood0);
+  box-shadow:
+    inset 0 2px 0 var(--blood2),
+    inset 0 -3px 0 var(--ink);
+}
+
+/* Keyboard-highlighted menu button: the same gold pixel outline as the upgrade cards. */
+.primary.is-selected,
+.secondary.is-selected,
+.ghost.is-selected {
+  outline: var(--px) solid var(--gold1);
+  outline-offset: var(--px);
+  box-shadow: 0 0 0 calc(var(--px) * 2) var(--ink);
+  color: var(--cream);
+}
+
+.stack {
+  display: grid;
+  width: min(360px, 100%);
+  gap: 6px;
+}
+
+.small-panel {
+  width: min(460px, 100%);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+  width: 100%;
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: var(--px) solid var(--wood0);
+}
+
+.controls div {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.controls dt {
+  display: flex;
+  gap: 3px;
+}
+
+.controls dd {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 18px;
+  color: var(--stone3);
+}
+
+/* First run only: the controls, below the HUD corner and clear of the floor where the
+   player starts), fading out once the player moves. */
+.controls-card {
+  --px: 2px;
+  position: absolute;
+  top: 136px;
+  left: 50%;
+  translate: -50% 0;
+  width: min(560px, calc(100% - 32px));
+  gap: 6px;
+  padding: 2px 10px 0;
+  pointer-events: none;
+  animation:
+    drop 260ms steps(4),
+    fade-late 9s steps(9) forwards;
+}
+
+.controls-card .controls {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+@keyframes fade-late {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+
+.controls-panel .controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.controls-note {
+  margin: -4px 0 0;
+  font-family: var(--pixel);
+  font-size: 20px;
+  color: var(--gold1);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+}
+
+.stats div {
+  display: grid;
+  gap: 2px;
+  padding: 12px 4px;
+  background: var(--stone0);
+  box-shadow: var(--inset);
+}
+
+.stats dt {
+  font-family: var(--label);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--stone3);
+}
+
+.stats dd {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--gold1);
+}
+
+.badge {
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  background: var(--gold1);
+  box-shadow:
+    inset 0 2px 0 var(--cream),
+    inset 0 -3px 0 var(--gold0);
+  font-family: var(--label);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--ink);
+  animation: pop 300ms steps(3);
+}
+
+.upgrade-panel {
+  width: min(880px, 100%);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  min-height: 190px;
+  padding: 20px 18px 16px;
+  background: var(--stone0);
+  box-shadow: var(--inset);
+  text-align: left;
+  text-shadow: var(--shadow);
+  animation: drop 300ms steps(4) both;
+}
+
+.card:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.card:nth-child(3) {
+  animation-delay: 160ms;
+}
+
+/* The highlighted card gets a gold pixel outline; the others dim. */
+.card {
+  filter: brightness(0.55) saturate(0.7);
+  transition: filter 120ms steps(2);
+}
+
+.card.is-selected {
+  filter: none;
+  outline: var(--px) solid var(--gold1);
+  outline-offset: var(--px);
+}
+
+.card:active {
+  transform: translateY(var(--px));
+}
+
+.choose-hint {
+  margin: 2px 0 0;
+  font-family: var(--pixel);
+  font-size: 20px;
+  color: var(--stone3);
+}
+
+.choose-hint kbd {
+  margin: 0 2px;
+}
+
+.card strong {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cream);
+}
+
+.card p {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--stone4);
+}
+
+.pips {
+  display: flex;
+  gap: var(--px);
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.pips i {
+  width: calc(var(--px) * 4);
+  height: calc(var(--px) * 3);
+  background: var(--ink);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--stone0);
+}
+
+.pips i.is-on {
+  background: var(--gold1);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--gold0);
+}
+
+.pips i.is-next {
+  background: var(--gold0);
+  animation: blink 0.6s steps(1) infinite;
+}
+
+/* ---------- Touch ---------- */
+
+.touch-controls {
+  position: absolute;
+  inset: auto 0 24px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 max(16px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.touch-pad {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.touch-button {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  border: calc(var(--px) * 5) solid transparent;
+  border-image: url('/ui/button-stone.png') 5 fill / calc(var(--px) * 5) repeat;
+  font-family: var(--label);
+  font-size: 16px;
+  color: var(--cream);
+  text-shadow: var(--shadow);
+  touch-action: none;
+}
+
+.touch-button.is-large {
+  width: 76px;
+  height: 76px;
+  border-image-source: url('/ui/button.png');
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.touch-button:active {
+  border-image-source: url('/ui/button-stone-down.png');
+}
+
+.touch-button.is-large:active {
+  border-image-source: url('/ui/button-down.png');
+}
+
+.rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint {
+    position: absolute;
+    top: 22%;
+    left: 50%;
+    display: block;
+    translate: -50% 0;
+    margin: 0;
+    padding: 4px 10px;
+    border: 2px solid var(--ink);
+    background: var(--wood0);
+    font-family: var(--pixel);
+    font-size: 18px;
+    color: var(--stone4);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+}
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 760px) {
+  :root {
+    --px: 2px;
+  }
+
+  .health-pips i {
+    width: 18px;
+    height: 24px;
+  }
+
+  .sermon-title {
+    display: none;
+  }
+
+  .score {
+    font-size: 32px;
+  }
+
+  .ability {
+    width: 38px;
+    height: 38px;
+  }
+
+  .ability-icon {
+    transform: scale(0.65);
+  }
+
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    min-height: 0;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .touch-pad {
+    gap: 6px;
+  }
+
+  .touch-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  .touch-button.is-large {
+    width: 62px;
+    height: 62px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
