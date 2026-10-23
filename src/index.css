@@ -1067,6 +1067,17 @@
   margin: 0 1px;
 }
 
+/* Wide enough for the records in the mode buttons; anything longer wraps rather than
+   pushing the column off centre. */
+.run-picker {
+  width: min(470px, 100%);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mode-button small {
+  white-space: normal;
+}
+
 /* Title: pick your apostates (one or two players; applies to both modes), then one button
    per mode, with each mode's records inside it, then the Ledger and Settings as a pair. */
 .player-pick {
