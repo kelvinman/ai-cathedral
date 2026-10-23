@@ -1078,86 +1078,61 @@
   white-space: normal;
 }
 
-/* Title: pick your apostates (one or two players; applies to both modes), then one button
-   per mode, with each mode's records inside it, then the Ledger and Settings as a pair. */
-.player-pick {
+/* Title: the players toggle (applies to both modes), one button per mode, then the
+   Ledger and Settings as quiet links on one row. */
+.players-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: auto 1fr 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--stone0);
+  box-shadow: var(--inset);
 }
 
-.player-pick.is-selected {
+.players-toggle.is-selected {
   outline: var(--px) solid var(--gold1);
   outline-offset: var(--px);
 }
 
-.player-pick button {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 8px 4px 6px;
-  background: var(--stone0);
-  box-shadow: var(--inset);
+.players-toggle .label {
+  padding: 0 6px;
+}
+
+.players-toggle button {
+  min-height: 34px;
+  padding: 0 6px;
   font-family: var(--label);
   font-size: 11px;
   text-transform: uppercase;
   color: var(--stone3);
 }
 
-.player-pick button.is-on {
+.players-toggle button.is-on {
   background: var(--stone1);
   color: var(--cream);
-  box-shadow:
-    var(--inset),
-    inset 0 calc(var(--px) * -1) 0 var(--gold1);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--gold1);
 }
 
-.apostates {
+/* Endless before it opens: the same button, dimmed. */
+.mode-button.is-locked {
+  cursor: default;
+  filter: grayscale(0.6) brightness(0.6);
+}
+
+.title-links {
   display: flex;
-  gap: 4px;
-  height: 56px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 18px;
 }
 
-/* The player's own sprite (src/assets/player-frames.png, 52×94 frames, player two's teal
-   coat on the second row), at 0.6 scale: standing still, or running when picked. */
-.apostate {
-  width: calc(52px * 0.6);
-  height: calc(94px * 0.6);
-  background: url('./assets/player-frames.png') 0 0 / calc(520px * 0.6) calc(188px * 0.6) no-repeat;
-  image-rendering: pixelated;
-  filter: drop-shadow(1px 0 0 #050307) drop-shadow(-1px 0 0 #050307) drop-shadow(0 1px 0 #050307);
+.title-links .ghost {
+  min-height: 40px;
 }
 
-.apostate.is-two {
-  background-position-y: calc(-94px * 0.6);
-}
-
-.player-pick button:not(.is-on) .apostate {
-  opacity: 0.55;
-}
-
-.player-pick button.is-on .apostate {
-  animation: apostate-run 0.5s steps(6) infinite;
-}
-
-@keyframes apostate-run {
-  from {
-    background-position-x: calc(-52px * 0.6 * 2);
-  }
-  to {
-    background-position-x: calc(-52px * 0.6 * 8);
-  }
-}
-
-.title-extras {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.title-extras .secondary {
-  min-height: 44px;
-  font-size: 13px;
+.title-panel {
+  padding-bottom: calc(var(--px) * 6);
 }
 
 .mode-button {
@@ -1181,20 +1156,6 @@
 .primary.mode-button small {
   color: var(--cream);
   opacity: 0.85;
-}
-
-/* The endless button's stand-in until it's unlocked. */
-.locked-mode {
-  display: grid;
-  min-height: 44px;
-  place-items: center;
-  padding: 0 12px;
-  font-family: var(--label);
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--stone2);
-  background: var(--stone0);
-  box-shadow: var(--inset);
 }
 
 .controls-note {
@@ -1690,7 +1651,7 @@
 }
 
 /* With the mouse, menus drop the keyboard cursor: hovering highlights instead. */
-.game.is-mouse :is(.primary, .secondary, .ghost, .player-pick, .players-toggle).is-selected {
+.game.is-mouse :is(.primary, .secondary, .ghost, .players-toggle).is-selected {
   outline: none;
   box-shadow: none;
 }
