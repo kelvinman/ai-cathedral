@@ -985,7 +985,8 @@ function spawnEnemy(g: Game, mark: SpawnMark) {
     phase: Math.random() * 10,
     scale: base.scale * eliteScale,
   })
-  burst(g, mark.x, mark.y - 30, '#e0213a', 18, 260, { glow: true, size: 3, life: 0.6 })
+  // Loaded in: a burst of the mark's colour as the follower appears.
+  burst(g, mark.x, mark.y - 30, mark.kind === 'wisp' ? '#2ce8f5' : mark.elite ? '#f2b04a' : '#ff3049', 18, 260, { glow: true, size: 3, life: 0.6 })
   g.events.push('spawn')
 }
 

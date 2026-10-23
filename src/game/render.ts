@@ -289,22 +289,6 @@ function halo(ctx: CanvasRenderingContext2D, x: number, y: number, radius: numbe
   }
 }
 
-function pentagram(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rotation: number, squash = 1) {
-  ctx.save()
-  ctx.translate(snap(x), snap(y))
-  ctx.scale(1, squash)
-  ctx.beginPath()
-  ctx.arc(0, 0, r, 0, TAU)
-  for (let point = 0; point <= 5; point += 1) {
-    const angle = rotation - Math.PI / 2 + (point * Math.PI * 4) / 5
-    const px = Math.cos(angle) * r * 0.92
-    const py = Math.sin(angle) * r * 0.92
-    if (point === 0) ctx.moveTo(px, py)
-    else ctx.lineTo(px, py)
-  }
-  ctx.restore()
-}
-
 /** The three framed blocks from the sheet, cycled like the original platforms. */
 const BLOCKS = [ATLAS.brickA, ATLAS.brickB, ATLAS.painting]
 const blockAt = (index: number) => BLOCKS[((index % 3) + 3) % 3]
@@ -1009,7 +993,7 @@ function followerFrame(e: Enemy, body: FollowerBody) {
 /** src/assets/hand-frames.png: three 20×20 frames of the Hallucinations' hand. */
 const HAND_FRAME = { w: 20, h: 20 }
 
-/** A 3×5 pixel font for the token letters the player writes and the Logos speaks, and for 429. */
+/** A 3×5 pixel font for the token letters, the Logos's words, 429, and spawn percentages. */
 const GLYPH_FONT: Record<string, string> = {
   A: '.#.#.#####.##.#',
   E: '####..##.#..###',
@@ -1028,6 +1012,14 @@ const GLYPH_FONT: Record<string, string> = {
   '4': '#.##.####..#..#',
   '2': '##...#.#.#..###',
   '9': '####.####..#..#',
+  '0': '####.##.##.####',
+  '1': '.#.##..#..#.###',
+  '3': '##...#.#...###.',
+  '5': '####..##...###.',
+  '6': '.###..####.####',
+  '7': '###..#.#..#..#.',
+  '8': '####.#####.####',
+  '%': '#.#..#.#.#..#.#',
 }
 
 /** Draw a glyph centred on (x, y), each font pixel `size` world pixels across. */
@@ -1229,24 +1221,49 @@ export function render(
   }
   ground.globalAlpha = 1
 
-  for (const mark of g.marks) {
+  // Followers arriving: they load in. Walkers get a spinner on the floor that fills as they
+  // arrive, with scanlines downloading them in from above; bosses load in gold with a
+  // percentage; Hallucinations resolve out of a block of glitch noise.
+  for (const [markIndex, mark] of g.marks.entries()) {
     const t = 1 - mark.timer / mark.maxTimer
-    const r = (mark.kind === 'wisp' ? 26 : mark.elite ? 70 : 40) * (0.4 + t * 0.6)
-    const cy = mark.kind === 'wisp' ? mark.y - 13 : mark.y
-    ground.strokeStyle = `rgba(255, 48, 73, ${0.4 + t * 0.6})`
-    ground.lineWidth = PX
-    pentagram(ground, mark.x, cy, r, Math.round(time * 30) / 10, mark.kind === 'wisp' ? 1 : 0.25)
-    ground.stroke()
-    ground.globalCompositeOperation = 'lighter'
-    if (mark.kind !== 'wisp') {
-      for (let step = 0; step < 4; step += 1) {
-        ground.fillStyle = `rgba(255, 30, 60, ${0.1 * t * (step + 1)})`
-        ground.fillRect(snap(mark.x - r * 0.6), mark.y - 170 + step * 42, snap(r * 1.2), 44)
+    if (mark.kind === 'wisp') {
+      const centre = mark.y - 13
+      const size = 26
+      const beat = Math.floor(time * 16) + markIndex * 11
+      for (let cell = 0; cell < 36; cell += 1) {
+        if (hash(beat + cell) > t * 0.8 + 0.1) continue
+        ground.fillStyle = hash(beat + cell + 50) < 0.5 ? '#2ce8f5' : '#e43b44'
+        ground.fillRect(snap(mark.x - size / 2 + (cell % 6) * (size / 6)), snap(centre - size / 2 + Math.floor(cell / 6) * (size / 6)), PX * 2, PX * 2)
       }
-    } else {
-      halo(ground, mark.x, cy, 40, '255, 30, 60', 0.5 * t)
+      ground.globalCompositeOperation = 'lighter'
+      halo(ground, mark.x, centre, 40, '44, 232, 245', 0.4 * t)
+      ground.globalCompositeOperation = 'source-over'
+      continue
+    }
+    const color = mark.elite ? '#f2b04a' : '#ff3049'
+    const rgb = mark.elite ? '242, 176, 74' : '255, 48, 73'
+    const r = mark.elite ? 64 : 36
+    const dots = 12
+    const filled = Math.floor(t * dots)
+    const head = Math.floor(time * 18) % dots
+    for (let index = 0; index < dots; index += 1) {
+      const angle = (index / dots) * TAU - Math.PI / 2
+      ground.fillStyle = index === head ? '#ffffff' : index < filled ? color : `rgba(${rgb}, 0.3)`
+      ground.fillRect(snap(mark.x + Math.cos(angle) * r) - PX, snap(mark.y + Math.sin(angle) * r * 0.22) - PX, PX * 3, PX * 2)
+    }
+    // Scanlines filling in from the top, down to the floor, as it loads.
+    ground.globalCompositeOperation = 'lighter'
+    const height = mark.elite ? 200 : 150
+    const lines = Math.floor(t * (height / 6))
+    for (let line = 0; line < lines; line += 1) {
+      ground.fillStyle = `rgba(${rgb}, ${0.08 + (line / lines) * 0.18})`
+      ground.fillRect(snap(mark.x - r * 0.5), snap(mark.y - height + line * 6), snap(r), PX)
     }
     ground.globalCompositeOperation = 'source-over'
+    if (mark.elite) {
+      const percent = `${Math.min(99, Math.floor(t * 100))}%`
+      ;[...percent].forEach((char, index) => drawGlyph(ground, char, mark.x + (index - (percent.length - 1) / 2) * PX * 8, mark.y - 30, PX * 2, color))
+    }
   }
 
   for (const [index, portal] of arena.portals.entries()) {
