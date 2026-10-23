@@ -132,14 +132,16 @@ test('combo tiers start at ×10, ×20 and ×30', () => {
 })
 
 test('the CAPTCHA wall holds the follower that reaches it', () => {
+  // Right of the nave's floor gates, so nothing teleports past the wall.
   const g = quietGame()
-  g.player.x = 300
-  g.glyphs.push({ x: 600, y: GROUND_Y, r: 52, life: 12, arm: 0, fired: false, owner: 0, text: 'AGI42' })
-  g.marks.push({ x: 1000, y: GROUND_Y, kind: 'acolyte', elite: false, timer: 0.01, maxTimer: 0.01 })
+  g.player.x = 950
+  g.glyphs.push({ x: 1060, y: GROUND_Y, r: 52, life: 12, arm: 0, fired: false, owner: 0, text: 'AGI42' })
+  g.marks.push({ x: 1240, y: GROUND_Y, kind: 'acolyte', elite: false, timer: 0.01, maxTimer: 0.01 })
   let held = false
   for (let t = 0; t < 15 && !held; t += 1 / 120) {
     holdStill(g)
     g.player.hp = 1e9
+    g.player.x = 950
     step(g, blank(), 1 / 120)
     held = g.enemies.some((e) => e.rooted > 0)
   }
