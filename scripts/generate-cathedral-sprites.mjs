@@ -1258,24 +1258,20 @@ const riteIcons = {
     }
     return s.outline()
   })(),
-  // Rate Limit: the red pentagram seal it leaves on the floor.
+  // Rate Limit: the amber 429 ring it leaves on the floor.
   seal: (() => {
     const s = new Sprite(16, 16)
     for (let y = 0; y < 16; y += 1) {
       for (let x = 0; x < 16; x += 1) {
         const r = Math.hypot(x - 7.5, y - 7.5)
-        if (r < 5.7) s.set(x, y, C.ink)
-        if (Math.abs(r - 6.4) < 0.75) s.set(x, y, y < 8 ? C.blood3 : C.blood2)
+        if (r < 6) s.set(x, y, C.ink)
+        // Segments, like a progress ring that has stalled.
+        if (Math.abs(r - 6.6) < 0.8) s.set(x, y, Math.floor((Math.atan2(y - 7.5, x - 7.5) + Math.PI) * 2.5) % 2 ? '#f77622' : C.gold0)
       }
     }
-    const points = Array.from({ length: 5 }, (_, index) => {
-      const angle = -Math.PI / 2 + (index * Math.PI * 4) / 5
-      return [7.5 + Math.cos(angle) * 5.2, 7.5 + Math.sin(angle) * 5.2]
-    })
-    points.forEach(([x, y], index) => {
-      const [nx, ny] = points[(index + 1) % 5]
-      line(s, x, y, nx, ny, C.rose)
-    })
+    ;['#.#.##..###', '#.#...#.#.#', '###..#..###', '..#.#.....#', '..#.###...#'].forEach((row, y) =>
+      [...row].forEach((bit, x) => bit === '#' && s.set(3 + x, 5 + y, C.cream)),
+    )
     return s.outline()
   })(),
   // Prompt Volley: a ring of gold bolts flying out.
@@ -1310,14 +1306,19 @@ const riteIcons = {
     line(s, 5, 8, 9, 4, C.stone4)
     return s.outline()
   })(),
-  // CAPTCHA Glyph: a ticked "I'm not a robot" box.
+  // CAPTCHA Glyph: the "select all squares" grid, some squares picked.
   glyph: (() => {
     const s = new Sprite(16, 16)
-    s.rect(2, 3, 11, 11, C.stone3)
-    s.rect(3, 4, 9, 9, C.stone4)
-    line(s, 4, 8, 6, 11, C.moss2, 2)
-    line(s, 6, 11, 12, 2, C.moss2, 2)
-    line(s, 7, 11, 13, 2, C.moss1)
+    s.rect(1, 1, 14, 14, '#0f4f8a')
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        const picked = [0, 4, 5, 7].includes(row * 3 + column)
+        s.rect(2 + column * 4, 2 + row * 4, 4, 4, picked ? '#8ad1f5' : '#2ca8f0')
+        s.rect(2 + column * 4, 2 + row * 4, 4, 1, picked ? C.white : '#5fc4f5')
+        s.rect(5 + column * 4, 2 + row * 4, 1, 4, '#0f4f8a')
+        s.rect(2 + column * 4, 5 + row * 4, 4, 1, '#0f4f8a')
+      }
+    }
     return s.outline()
   })(),
 }

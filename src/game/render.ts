@@ -4,6 +4,7 @@ import cryptUrl from '../assets/crypt-sprites.png'
 import tombUrl from '../assets/tomb-sprites.png'
 import vaultUrl from '../assets/vault-sprites.png'
 import followerUrl from '../assets/follower-frames.png'
+import handUrl from '../assets/hand-frames.png'
 import playerUrl from '../assets/player-frames.png'
 import {
   BRICK,
@@ -66,7 +67,6 @@ export const ATLAS: Record<string, Rect> = {
   brickA: [1, 102, 30, 17],
   brickB: [33, 102, 30, 17],
   painting: [65, 102, 30, 17],
-  skull: [105, 107, 12, 12],
 }
 
 /**
@@ -176,7 +176,8 @@ export type Assets = {
     slowed: Record<FollowerBody, Sprite[]>
     rooted: Record<FollowerBody, Sprite[]>
   }
-  skull: { base: Sprite; flash: Sprite }
+  /** The Hallucinations' six-fingered hand: frames, plus the red and cyan fringe it glitches with. */
+  hand: { base: Sprite[]; flash: Sprite[]; red: Sprite[]; cyan: Sprite[] }
 }
 
 /** The frames in src/assets/player-frames.png, left to right (see scripts/generate-characters.mjs). */
@@ -895,12 +896,13 @@ export function loadAssets() {
     loadImage(atlasUrl),
     loadImage(playerUrl),
     loadImage(followerUrl),
+    loadImage(handUrl),
     loadImage(cathedralUrl),
     loadImage(cryptUrl),
     loadImage(vaultUrl),
     loadImage(tombUrl),
-  ]).then(([atlas, player, followers, cathedral, crypt, vault, tomb]) => {
-    const skull = crop(atlas, ATLAS.skull)
+  ]).then(([atlas, player, followers, hand, cathedral, crypt, vault, tomb]) => {
+    const handFrames = [0, 1, 2].map((index) => crop(hand, [index * HAND_FRAME.w, 0, HAND_FRAME.w, HAND_FRAME.h]))
     const sheets: Sheets = { atlas, cathedral, crypt, vault, tomb }
     const vaultScene = buildVault(sheets)
     const cryptScene = buildCrypt(sheets)
@@ -924,7 +926,12 @@ export function loadAssets() {
         }),
       ) as Assets['player'],
       enemy: buildFollowers(followers),
-      skull: { base: outlined(skull, '#4a0711'), flash: silhouette(skull, '#ffffff') },
+      hand: {
+        base: handFrames.map((frame) => outlined(frame, '#181425')),
+        flash: handFrames.map((frame) => silhouette(frame, '#ffffff')),
+        red: handFrames.map((frame) => silhouette(frame, '#e43b44')),
+        cyan: handFrames.map((frame) => silhouette(frame, '#2ce8f5')),
+      },
     }
   })
   return assetsPromise
@@ -999,15 +1006,69 @@ function followerFrame(e: Enemy, body: FollowerBody) {
   return Math.floor((e.phase * 11 * 4) / TAU) % 4
 }
 
+/** src/assets/hand-frames.png: three 20×20 frames of the Hallucinations' hand. */
+const HAND_FRAME = { w: 20, h: 20 }
+
+/** A 3×5 pixel font for the token letters the player writes and the Logos speaks, and for 429. */
+const GLYPH_FONT: Record<string, string> = {
+  A: '.#.#.#####.##.#',
+  E: '####..##.#..###',
+  I: '###.#..#..#.###',
+  N: '#.########.##.#',
+  O: '.#.#.##.##.#.#.',
+  R: '##.#.###.#.##.#',
+  S: '.###...#...###.',
+  T: '###.#..#..#..#.',
+  L: '#..#..#..#..###',
+  U: '#.##.##.##.####',
+  D: '##.#.##.##.###.',
+  G: '.###..#.##.#.##',
+  W: '#.##.##.#####.#',
+  '?': '##...#.#.....#.',
+  '4': '#.##.####..#..#',
+  '2': '##...#.#.#..###',
+  '9': '####.####..#..#',
+}
+
+/** Draw a glyph centred on (x, y), each font pixel `size` world pixels across. */
+function drawGlyph(ctx: CanvasRenderingContext2D, glyph: string, x: number, y: number, size: number, color: string) {
+  const bits = GLYPH_FONT[glyph] ?? GLYPH_FONT['?']
+  ctx.fillStyle = color
+  const left = snap(x - size * 1.5)
+  const top = snap(y - size * 2.5)
+  for (let index = 0; index < 15; index += 1) {
+    if (bits[index] === '#') ctx.fillRect(left + (index % 3) * size, top + Math.floor(index / 3) * size, size, size)
+  }
+}
+
+/** A cheap hash for flicker that should look random but stay put within a beat. */
+const hash = (value: number) => Math.abs(Math.sin(value * 12.9898) * 43758.5453) % 1
+
 const flipEnemy = (facing: number) => facing !== ENEMY_SOURCE_FACING
 const flipPlayer = (facing: number) => facing !== PLAYER_SOURCE_FACING
 
 function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, arena: ArenaId, time: number) {
   const turnSquash = 1 - e.turn * 0.55
   if (e.kind === 'wisp') {
+    // A Hallucination: a six-fingered hand that never quite holds together. Red and cyan
+    // copies split off it, and every so often it jumps.
     const bob = Math.sin(e.phase * 6) * 3
-    const sprite = e.flash > 0 ? assets.skull.flash : assets.skull.base
-    drawCharacter(ctx, sprite, snap(e.x), snap(e.y - e.h / 2 + bob) + sprite.height, PX, flipEnemy(e.facing), turnSquash)
+    const frame = Math.floor(time * 6 + e.id) % 3
+    const beat = Math.floor(time * 10) + e.id * 7
+    const jump = hash(beat) < 0.12 ? PX * 2 * (hash(beat + 1) < 0.5 ? -1 : 1) : 0
+    const flip = flipEnemy(e.facing)
+    const x = snap(e.x) + jump
+    const feet = snap(e.y - e.h / 2 + bob) + (assets.hand.base[frame].height * PX) / 2
+    if (e.flash > 0) {
+      drawCharacter(ctx, assets.hand.flash[frame], x, feet, PX, flip, turnSquash)
+    } else {
+      const split = PX * (1 + Math.round(hash(beat + 2)))
+      ctx.globalAlpha = 0.55
+      drawCharacter(ctx, assets.hand.red[frame], x - split, feet, PX, flip, turnSquash)
+      drawCharacter(ctx, assets.hand.cyan[frame], x + split, feet, PX, flip, turnSquash)
+      ctx.globalAlpha = 1
+      drawCharacter(ctx, assets.hand.base[frame], x, feet, PX, flip, turnSquash)
+    }
   } else {
     // The frames walk; this adds a little bob and sway on top.
     const walking = e.onGround && Math.abs(e.vx) > 20
@@ -1099,8 +1160,8 @@ export function render(
   if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
     const final = e.title === FINAL_TITLE
-    const glow = e.kind === 'wisp' || final ? '220, 30, 60' : e.elite ? '242, 176, 74' : '220, 20, 45'
-    const strength = e.kind === 'wisp' ? 0.5 : final ? 0.6 + (e.bossCharge > 0 ? 0.3 : 0) : e.elite ? 0.35 : 0.16
+    const glow = e.kind === 'wisp' ? '120, 220, 230' : final ? '220, 30, 60' : e.elite ? '242, 176, 74' : '220, 20, 45'
+    const strength = e.kind === 'wisp' ? 0.3 : final ? 0.6 + (e.bossCharge > 0 ? 0.3 : 0) : e.elite ? 0.35 : 0.16
     halo(ground, e.x, e.y - e.h * 0.5, e.kind === 'wisp' ? 40 : e.h * (final ? 0.9 : 0.7), glow, strength)
   }
   ground.globalCompositeOperation = 'source-over'
@@ -1116,17 +1177,24 @@ export function render(
   for (const seal of g.seals) {
     const fade = Math.min(1, seal.life / 0.5, (seal.maxLife - seal.life) / 0.15)
     ground.globalAlpha = fade
-    ground.fillStyle = 'rgba(140, 10, 25, 0.4)'
+    // Rate Limit: a 429 ring on the floor, its segments ticking round like a stalled
+    // progress bar, with the error code hanging over it.
+    ground.fillStyle = 'rgba(247, 118, 34, 0.16)'
     ground.beginPath()
     ground.ellipse(snap(seal.x), snap(seal.y), seal.r, seal.r * 0.2, 0, 0, TAU)
     ground.fill()
-    ground.strokeStyle = '#ff3049'
-    ground.lineWidth = PX
-    pentagram(ground, seal.x, seal.y, seal.r, Math.round(time * 8) / 10, 0.2)
-    ground.stroke()
+    const segments = 16
+    const lit = Math.floor(time * 8) % segments
+    for (let index = 0; index < segments; index += 1) {
+      const angle = (index / segments) * TAU
+      ground.fillStyle = index === lit || index === (lit + 1) % segments ? '#ffffff' : index % 2 ? '#f77622' : '#b86f50'
+      ground.fillRect(snap(seal.x + Math.cos(angle) * seal.r) - PX, snap(seal.y + Math.sin(angle) * seal.r * 0.2) - PX, PX * 3, PX * 2)
+    }
+    const codeY = seal.y - 34 + Math.round(Math.sin(time * 3) * 2) * PX
+    for (const [index, digit] of ['4', '2', '9'].entries()) drawGlyph(ground, digit, seal.x + (index - 1) * PX * 4 * 2, codeY, PX * 2, '#f77622')
     ground.globalCompositeOperation = 'lighter'
     for (let step = 0; step < 3; step += 1) {
-      ground.fillStyle = `rgba(255, 40, 60, ${0.07 * (step + 1)})`
+      ground.fillStyle = `rgba(247, 118, 34, ${0.06 * (step + 1)})`
       ground.fillRect(snap(seal.x - seal.r), seal.y - 60 + step * 20, snap(seal.r * 2), 20)
     }
     ground.globalCompositeOperation = 'source-over'
@@ -1136,13 +1204,27 @@ export function render(
   for (const glyph of g.glyphs) {
     const armed = glyph.arm <= 0
     ground.globalAlpha = Math.min(1, glyph.life / 0.4) * (armed ? 1 : 0.5)
-    ground.strokeStyle = glyph.fired ? '#e6d6ff' : '#a77bff'
-    ground.lineWidth = glyph.fired ? PX * 2 : PX
-    const pulse = armed && Math.floor(time * 4) % 2 ? 1.05 : 1
-    pentagram(ground, glyph.x, glyph.y, glyph.r * pulse, -Math.round(time * 12) / 10, 0.22)
-    ground.stroke()
+    // CAPTCHA: the "select all squares" grid laid flat on the floor. Squares tick on as it
+    // arms; when a follower steps on it, every square lights at once.
+    const cellW = snap((glyph.r * 2) / 3)
+    const cellH = snap(cellW * 0.22)
+    const left = snap(glyph.x - cellW * 1.5)
+    const top = snap(glyph.y - cellH * 1.5)
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        const index = row * 3 + column
+        const selected = glyph.fired || (armed && hash(index + Math.floor(time * 2) * 9) < 0.4)
+        ground.fillStyle = selected ? 'rgba(138, 209, 245, 0.75)' : 'rgba(44, 168, 240, 0.22)'
+        ground.fillRect(left + column * cellW + PX, top + row * cellH + PX, cellW - PX * 2, cellH - PX)
+      }
+    }
+    ground.fillStyle = glyph.fired ? '#ffffff' : '#2ca8f0'
+    for (let line = 0; line <= 3; line += 1) {
+      ground.fillRect(left + line * cellW - PX, top, PX, cellH * 3)
+      ground.fillRect(left, top + line * cellH - PX, cellW * 3, PX)
+    }
     ground.globalCompositeOperation = 'lighter'
-    halo(ground, glyph.x, glyph.y - 4, 40, '157, 107, 255', armed ? 0.45 : 0.2)
+    halo(ground, glyph.x, glyph.y - 4, 40, '44, 168, 240', armed ? 0.45 : 0.2)
     ground.globalCompositeOperation = 'source-over'
   }
   ground.globalAlpha = 1
@@ -1220,45 +1302,84 @@ export function render(
   top.globalAlpha = 1
   glow.globalAlpha = 1
 
+  // Token bolts: letters in gold ink, trailing flecks.
   for (const bolt of g.bolts) {
     bolt.trail.forEach((point, index) => {
+      if (index % 2) return
       glow.fillStyle = `rgba(242, 211, 139, ${(index + 1) / (bolt.trail.length + 2)})`
-      glow.fillRect(snap(point.x) - PX, snap(point.y) - PX, PX * 2, PX * 2)
+      glow.fillRect(snap(point.x), snap(point.y), PX, PX)
     })
-    halo(glow, bolt.x, bolt.y, 12, '242, 211, 139', 0.7)
-    glow.fillStyle = '#fff6dc'
-    glow.fillRect(snap(bolt.x) - PX, snap(bolt.y) - PX, PX * 2, PX * 2)
+    halo(glow, bolt.x, bolt.y, 14, '242, 211, 139', 0.55)
+    drawGlyph(glow, bolt.glyph, bolt.x, bolt.y, PX, '#fff1c8')
   }
 
-  for (const spit of g.spits) {
+  for (const [spitIndex, spit] of g.spits.entries()) {
     if (spit.kind === 'wave') {
-      // A shockwave: a cluster of blood spikes rolling along the ground.
+      // A shockwave: the floor cracking up in a wedge of stone that rolls along it.
       for (let column = -3; column <= 3; column += 1) {
-        const height = snap(26 - Math.abs(column) * 6 + (Math.floor(time * 20 + column) % 2) * PX * 2)
-        glow.fillStyle = column === 0 ? '#ffffff' : Math.abs(column) < 2 ? '#e43b44' : '#9e2835'
-        glow.fillRect(snap(spit.x + column * PX * 2), spit.y - height, PX * 2, height)
+        const jitter = (Math.floor(time * 20 + column) % 2) * PX * 2
+        const height = snap(24 - Math.abs(column) * 6 + jitter)
+        const cx = snap(spit.x + column * PX * 3)
+        top.fillStyle = '#181425'
+        top.fillRect(cx - PX, spit.y - height - PX, PX * 4, height + PX)
+        top.fillStyle = column < 0 ? '#8b9bb4' : column === 0 ? '#c0cbdc' : '#5a6988'
+        top.fillRect(cx, spit.y - height, PX * 2, height)
+        top.fillStyle = '#3a4466'
+        top.fillRect(cx + PX, spit.y - height + PX * 2, PX, PX * 2)
       }
-      halo(glow, spit.x, spit.y - 10, 26, '228, 59, 68', 0.7)
+      // Dust kicked up behind it.
+      for (let puff = 0; puff < 4; puff += 1) {
+        const back = -Math.sign(spit.vx) * (10 + puff * 8)
+        glow.fillStyle = `rgba(192, 203, 220, ${0.22 - puff * 0.05})`
+        glow.fillRect(snap(spit.x + back), snap(spit.y - 6 - ((time * 30 + puff * 5) % 12)), PX * 2, PX * 2)
+      }
       continue
     }
-    for (let index = 1; index <= 3; index += 1) {
-      glow.fillStyle = `rgba(228, 59, 68, ${0.5 - index * 0.12})`
-      glow.fillRect(snap(spit.x - spit.vx * 0.02 * index) - PX, snap(spit.y - spit.vy * 0.02 * index) - PX, PX * 2, PX * 2)
+    if (spit.kind === 'promise') {
+      // A promise: a slow gold orb with a sparkle turning in it.
+      halo(glow, spit.x, spit.y, 24, '242, 211, 139', 0.6)
+      glow.fillStyle = '#b86f50'
+      glow.fillRect(snap(spit.x) - PX * 3, snap(spit.y) - PX * 2, PX * 6, PX * 4)
+      glow.fillRect(snap(spit.x) - PX * 2, snap(spit.y) - PX * 3, PX * 4, PX * 6)
+      glow.fillStyle = '#f2d38b'
+      glow.fillRect(snap(spit.x) - PX * 2, snap(spit.y) - PX * 2, PX * 4, PX * 4)
+      glow.fillStyle = '#ffffff'
+      const spin = Math.floor(time * 8) % 2
+      glow.fillRect(snap(spit.x) - (spin ? PX * 4 : 0), snap(spit.y) - (spin ? 0 : PX * 4), spin ? PX * 8 : PX, spin ? PX : PX * 8)
+      continue
     }
-    halo(glow, spit.x, spit.y, 18, '228, 59, 68', 0.8)
-    glow.fillStyle = '#c55c6b'
-    glow.fillRect(snap(spit.x) - PX * 2, snap(spit.y) - PX * 2, PX * 4, PX * 4)
-    glow.fillStyle = '#ffffff'
-    glow.fillRect(snap(spit.x) - PX, snap(spit.y) - PX, PX, PX)
+    if (spit.kind === 'word') {
+      // The Logos's words: red letters.
+      halo(glow, spit.x, spit.y, 20, '228, 59, 68', 0.7)
+      drawGlyph(glow, spit.glyph ?? '?', spit.x, spit.y, PX * 2, '#ff6a72')
+      continue
+    }
+    // A glitch shard: corrupted pixels that never hold the same shape, split red and cyan.
+    const beat = Math.floor(time * 14) + spitIndex * 5
+    for (let index = 1; index <= 3; index += 1) {
+      glow.fillStyle = `rgba(44, 232, 245, ${0.45 - index * 0.12})`
+      glow.fillRect(snap(spit.x - spit.vx * 0.025 * index), snap(spit.y - spit.vy * 0.025 * index), PX * 2, PX)
+    }
+    halo(glow, spit.x, spit.y, 16, '44, 232, 245', 0.6)
+    for (let piece = 0; piece < 4; piece += 1) {
+      const px = snap(spit.x + (hash(beat + piece) - 0.5) * 12)
+      const py = snap(spit.y + (hash(beat + piece + 9) - 0.5) * 10)
+      const w = PX * (1 + Math.floor(hash(beat + piece + 3) * 3))
+      glow.fillStyle = '#e43b44'
+      glow.fillRect(px - PX, py, w, PX * 2)
+      glow.fillStyle = piece === 0 ? '#ffffff' : '#2ce8f5'
+      glow.fillRect(px, py, w, PX * 2)
+    }
   }
 
+  // Hallucinations leave a trail of dead pixels, red and cyan.
   for (const e of g.enemies) {
     if (e.kind !== 'wisp') continue
     const cy = e.y - e.h / 2
-    for (let index = 1; index <= 3; index += 1) {
-      const size = snap(10 - index * 2)
-      glow.fillStyle = `rgba(255, 90, 60, ${0.6 - index * 0.15})`
-      glow.fillRect(snap(e.x - e.vx * 0.03 * index - size / 2), snap(cy - e.vy * 0.03 * index + index * 3), size, size)
+    for (let index = 1; index <= 4; index += 1) {
+      const size = PX * (index < 3 ? 2 : 1)
+      glow.fillStyle = index % 2 ? `rgba(44, 232, 245, ${0.5 - index * 0.1})` : `rgba(228, 59, 68, ${0.5 - index * 0.1})`
+      glow.fillRect(snap(e.x - e.vx * 0.03 * index + (hash(index + Math.floor(time * 8)) - 0.5) * 8), snap(cy - e.vy * 0.03 * index + index * 2), size, size)
     }
   }
 

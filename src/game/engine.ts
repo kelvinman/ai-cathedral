@@ -117,6 +117,8 @@ export type Enemy = Body & {
 export type Bolt = Point & {
   vx: number
   vy: number
+  /** The letter this token is drawn as. */
+  glyph: string
   life: number
   damage: number
   pierce: number
@@ -144,8 +146,14 @@ export type Spit = Point & {
   vx: number
   vy: number
   life: number
-  /** 'orb' flies at you; 'wave' is a slam shockwave that rolls along one ledge or the floor. */
-  kind: 'orb' | 'wave'
+  /**
+   * What flies at you: a Hallucination's glitch shard, a Hype Bishop's slow gold promise, or
+   * the Logos's own words. A 'wave' is a slam's cracked-stone shockwave that rolls along one
+   * ledge or the floor.
+   */
+  kind: 'shard' | 'promise' | 'word' | 'wave'
+  /** Words only: the letter drawn. */
+  glyph?: string
   damage: number
   by: string
   /** Waves stop at the edges of the surface they were slammed on. */
@@ -431,6 +439,8 @@ export const BALANCE = {
   /** First sermon with spitting wisps. */
   wispFrom: 2,
   spit: { damage: 12, speed: 300, every: [2.0, 3.2] as const, range: 560 },
+  /** Hype Bishops lob slow promises: easy to see coming, but they hurt. */
+  promise: { damage: 8, speed: 170, every: [5, 7] as const, range: 480 },
 }
 
 /** Draw scale for the 94px-tall player sprite; followers are sized relative to it. */
@@ -468,9 +478,9 @@ export const abilityMeta: Record<
   seal: {
     label: 'Rate Limit',
     key: '',
-    does: 'A blood seal on the floor that slows and burns followers.',
+    does: 'A 429 ring on the floor: followers inside slow to a crawl and take damage.',
     when: 'Casts when two or more crowd you.',
-    color: '#d6293b',
+    color: '#f77622',
   },
   volley: {
     label: 'Prompt Volley',
@@ -482,16 +492,16 @@ export const abilityMeta: Record<
   mirror: {
     label: 'Alignment Mirror',
     key: '',
-    does: 'A shield that blocks hits and blood, and hurts whatever touches it.',
+    does: 'A shield that blocks hits and shots, and hurts whatever touches it.',
     when: 'Casts when a follower is about to hit you.',
     color: '#b9a3ff',
   },
   glyph: {
     label: 'CAPTCHA Glyph',
     key: '',
-    does: 'A trap at your feet that stops the followers who step on it.',
+    does: 'A "select all squares" grid at your feet: followers who step on it are stuck proving they are human.',
     when: 'Casts when one walks toward you.',
-    color: '#9d6bff',
+    color: '#2ca8f0',
   },
 }
 
@@ -1079,7 +1089,7 @@ function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
   }
   if (ability === 'seal') {
     g.seals.push({ x: p.x, y: p.y, r: g.stats.sealRadius, life: 5, maxLife: 5 })
-    burst(g, p.x, p.y - 8, '#e0213a', 26, 320, { glow: true, size: 3 })
+    burst(g, p.x, p.y - 8, '#f77622', 26, 320, { glow: true, size: 3 })
     g.trauma = Math.min(1, g.trauma + 0.2)
   }
   if (ability === 'volley') {
@@ -1096,7 +1106,7 @@ function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
   }
   if (ability === 'glyph') {
     g.glyphs.push({ x: p.x, y: p.y, r: 95, life: 12, arm: 0.35, fired: false })
-    burst(g, p.x, p.y - 6, '#9d6bff', 18, 200, { glow: true, size: 3 })
+    burst(g, p.x, p.y - 6, '#2ca8f0', 18, 200, { glow: true, size: 3 })
   }
   g.cooldowns[ability] = g.cooldownMax[ability]
   // Rites cast themselves, so name them as they go off.
@@ -1107,12 +1117,17 @@ function triggerAbility(g: Game, ability: AbilityKey, input: Input) {
   g.events.push(ability)
 }
 
+/** The letters a token bolt can be: the player is writing back at the Logos. */
+export const TOKEN_GLYPHS = 'AEINORSTLUDGW?'
+const randomGlyph = () => TOKEN_GLYPHS[Math.floor(Math.random() * TOKEN_GLYPHS.length)]
+
 function fireBolt(g: Game, x: number, y: number, dx: number, dy: number, damageScale = 1) {
   g.bolts.push({
     x,
     y,
     vx: dx * g.stats.boltSpeed,
     vy: dy * g.stats.boltSpeed,
+    glyph: randomGlyph(),
     life: 0.85,
     damage: g.stats.damage * damageScale,
     pierce: g.stats.pierce,
@@ -1222,9 +1237,9 @@ function updatePlayer(g: Game, input: Input, dt: number) {
   }
   if (p.onGround && Math.abs(p.vx) > 40) p.runPhase += dt * Math.abs(p.vx) * 0.045
 
-  // Auto-fire at the nearest follower in the arena.
+  // Auto-fire at the nearest follower in the arena, flicked from the quill in the front hand.
   p.fireTimer = Math.max(0, p.fireTimer - dt)
-  const origin = chest(p)
+  const origin = { x: p.x + p.facing * 12, y: p.y - 42 }
   const target = nearestEnemy(g, origin, BALANCE.autoRange)
   if (target && p.fireTimer <= 0 && p.dashTime <= 0) {
     p.fireTimer = g.stats.fireRate
@@ -1233,9 +1248,11 @@ function updatePlayer(g: Game, input: Input, dt: number) {
     const shots = 1 + g.stats.multishot
     for (let index = 0; index < shots; index += 1) {
       const angle = base + (index - (shots - 1) / 2) * 0.13
-      fireBolt(g, origin.x + Math.cos(angle) * 18, origin.y + Math.sin(angle) * 18, Math.cos(angle), Math.sin(angle))
+      fireBolt(g, origin.x + Math.cos(angle) * 6, origin.y + Math.sin(angle) * 6, Math.cos(angle), Math.sin(angle))
     }
-    burst(g, origin.x + Math.cos(base) * 22, origin.y + Math.sin(base) * 22, '#f2d38b', 4, 120, { glow: true, size: 2, life: 0.15 })
+    // A flick of gold ink off the nib.
+    burst(g, origin.x, origin.y, '#f2d38b', 4, 120, { glow: true, size: 2, life: 0.15 })
+    burst(g, origin.x, origin.y, '#2a1d33', 3, 90, { gravity: 900, size: 2, life: 0.35 })
     g.events.push('shoot')
   }
 
@@ -1405,7 +1422,9 @@ function shockwave(g: Game, e: Enemy) {
       maxX: surface.x + surface.w,
     })
   }
-  burst(g, e.x, e.y - 6, '#9e2835', 30, 420, { gravity: 1400, size: 4 })
+  // Chips of floor stone thrown up by the slam.
+  burst(g, e.x, e.y - 6, '#8b9bb4', 22, 420, { gravity: 1400, size: 4 })
+  burst(g, e.x, e.y - 6, '#3a4466', 14, 300, { gravity: 1400, size: 3 })
   g.trauma = Math.min(1, g.trauma + 0.6)
   g.events.push('slam')
 }
@@ -1460,7 +1479,8 @@ function bossBrain(g: Game, e: Enemy, dt: number, canAct: boolean) {
         vx: Math.cos(angle) * BALANCE.spit.speed * 1.1,
         vy: Math.sin(angle) * BALANCE.spit.speed * 1.1,
         life: 3.5,
-        kind: 'orb',
+        kind: 'word',
+        glyph: randomGlyph(),
         damage: Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)),
         by: FINAL_TITLE,
       })
@@ -1524,12 +1544,12 @@ function updateEnemies(g: Game, dt: number) {
           vx: (dx / reach) * BALANCE.spit.speed,
           vy: (dy / reach) * BALANCE.spit.speed,
           life: 3.2,
-          kind: 'orb',
+          kind: 'shard',
           damage: Math.round(BALANCE.spit.damage * (1 + (g.wave - 1) * 0.03)),
           by: ENEMY_NAMES.wisp,
         })
         g.events.push('spit')
-        burst(g, from.x, from.y, '#e43b44', 6, 120, { glow: true, size: 2, life: 0.25 })
+        burst(g, from.x, from.y, '#2ce8f5', 6, 120, { glow: true, size: 2, life: 0.25 })
       }
     } else {
       if (e.rooted > 0) {
@@ -1576,6 +1596,28 @@ function updateEnemies(g: Game, dt: number) {
         }
       } else if (!canAct) {
         e.vx = approach(e.vx, 0, 900 * dt)
+      }
+      // Hype Bishops stand and lob promises: slow, gold, and easy to step around.
+      if (e.kind === 'bishop' && !e.title && canAct && e.onGround) {
+        e.spitCd -= dt
+        const reach = Math.hypot(dx, dy) || 1
+        if (e.spitCd <= 0 && reach < BALANCE.promise.range && reach > 90 && e.x > 0 && e.x < W) {
+          const [min, max] = BALANCE.promise.every
+          e.spitCd = rand(min, max)
+          const mouth = { x: e.x + e.facing * e.w * 0.3, y: e.y - e.h * 0.72 }
+          g.spits.push({
+            x: mouth.x,
+            y: mouth.y,
+            vx: (dx / reach) * BALANCE.promise.speed,
+            vy: (dy / reach) * BALANCE.promise.speed,
+            life: 4.5,
+            kind: 'promise',
+            damage: Math.round(BALANCE.promise.damage * (1 + (g.wave - 1) * 0.03)),
+            by: ENEMY_NAMES.bishop,
+          })
+          g.events.push('spit')
+          burst(g, mouth.x, mouth.y, '#f2d38b', 8, 140, { glow: true, size: 2, life: 0.3 })
+        }
       }
       e.vy = Math.min(1150, e.vy + GRAVITY * gravityScale(g) * dt)
       moveBody(e, dt, g.arena.platforms)
@@ -1674,7 +1716,7 @@ function updateSpits(g: Game, dt: number) {
     spit.x += spit.vx * dt
     spit.y += spit.vy * dt
     spit.life -= dt
-    if (spit.kind === 'orb' && spit.y > GROUND_Y) spit.life = 0
+    if (spit.kind !== 'wave' && spit.y > GROUND_Y) spit.life = 0
     if (spit.minX !== undefined && spit.maxX !== undefined && (spit.x < spit.minX || spit.x > spit.maxX)) spit.life = 0
     // A wave only catches you if your feet are on its surface: jump it.
     const hit =
@@ -1686,7 +1728,11 @@ function updateSpits(g: Game, dt: number) {
       if (p.shield > 0) burst(g, spit.x, spit.y, '#b9a3ff', 8, 200, { glow: true })
       else hurtPlayer(g, spit.damage, spit.x, spit.by)
     }
-    if (spit.life <= 0) burst(g, spit.x, spit.y, '#9e2835', 6, 140, { gravity: 900, size: 3 })
+    // Shards scatter into pixels, promises pop into gold sparkle, words crumble, stone settles.
+    if (spit.life <= 0) {
+      const debris = { shard: '#2ce8f5', promise: '#f2d38b', word: '#e43b44', wave: '#8b9bb4' }[spit.kind]
+      burst(g, spit.x, spit.y, debris, 6, 140, spit.kind === 'promise' ? { glow: true, size: 2.5 } : { gravity: 900, size: 3 })
+    }
   }
   g.spits = g.spits.filter((spit) => spit.life > 0)
 }
@@ -1698,7 +1744,7 @@ function updateZones(g: Game, dt: number) {
       if (Math.abs(e.x - seal.x) < seal.r + e.w / 2 && Math.abs(e.y - seal.y) < 70) {
         e.slow = 0.2
         e.hp -= 8 * dt
-        if (Math.random() < dt * 6) burst(g, e.x, e.y - 6, '#e0213a', 1, 40, { glow: true, up: 80, life: 0.6 })
+        if (Math.random() < dt * 6) burst(g, e.x, e.y - 6, '#f77622', 1, 40, { glow: true, up: 80, life: 0.6 })
       }
     }
     if (Math.random() < dt * 20) {
@@ -1734,7 +1780,7 @@ function updateZones(g: Game, dt: number) {
         damageEnemy(g, e, 30 + g.stats.damage, 0, 0)
       }
       g.trauma = Math.min(1, g.trauma + 0.35)
-      burst(g, glyph.x, glyph.y - 20, '#9d6bff', 34, 380, { glow: true, size: 3.5 })
+      burst(g, glyph.x, glyph.y - 20, '#2ca8f0', 34, 380, { glow: true, size: 3.5 })
       g.events.push('trap')
     }
   }

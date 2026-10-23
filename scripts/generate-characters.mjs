@@ -703,3 +703,39 @@ rows.push(['walk0', 'walk1', 'walk2', 'walk3', 'charge'].map((_, index) => theLo
 const columns = Math.max(...rows.map((row) => row.length))
 writePng('src/assets/follower-frames.png', F.w * columns, F.h * rows.length, (x, y) => rows[Math.floor(y / F.h)][Math.floor(x / F.w)]?.get(x % F.w, y % F.h) ?? null)
 console.log(`follower-frames.png: ${rows.length} rows of up to ${columns} frames of ${F.w}×${F.h}`)
+
+// ---------- Hallucinations: a floating hand with six fingers ----------
+// The classic mistake of image models, given a body. 18×18, fingers toward the front (+x);
+// three frames of the fingers flexing. The renderer adds the red/cyan glitch fringe.
+const HAND = { w: 20, h: 20 }
+const HAND_SKIN = ['#f2d9cc', '#d9b4a6', '#a8847c', '#5f3a35']
+/** A one-pixel line in solid colour (limb() is for thicker shapes with a rim). */
+function stroke(s, [x0, y0], [x1, y1], color, tipColor = color) {
+  const steps = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2)
+  for (let index = 0; index <= steps; index += 1) {
+    s.set(x0 + ((x1 - x0) * index) / steps, y0 + ((y1 - y0) * index) / steps, index === steps ? tipColor : color)
+  }
+}
+function hallucination(frame) {
+  const s = new Sprite(HAND.w, HAND.h)
+  const flex = [0, 1, -1][frame]
+  const palm = [9, 12]
+  // Wrist trailing back and down.
+  limb(s, [2, 18], [7, 14], 2.6, HAND_SKIN)
+  // Six fingers fanning from the top of the palm, each a slightly different length.
+  for (let index = 0; index < 6; index += 1) {
+    const angle = ((-140 + index * 24) * Math.PI) / 180
+    const base = [palm[0] + Math.cos(angle) * 3.5, palm[1] + Math.sin(angle) * 3.5]
+    const length = 5 + ((index * 5) % 3) + (index % 2 ? flex : -flex)
+    const tip = [base[0] + Math.cos(angle) * length, base[1] + Math.sin(angle) * length]
+    stroke(s, base, tip, index < 3 ? HAND_SKIN[1] : HAND_SKIN[2], HAND_SKIN[0])
+  }
+  disc(s, palm[0], palm[1], 4.6, (dx, dy) => (dx + dy < -3 ? HAND_SKIN[0] : dx + dy > 3 ? HAND_SKIN[2] : HAND_SKIN[1]))
+  // Knuckle creases, and a thumb set too low on the palm.
+  for (const [x, y] of [[7, 9], [9, 8], [11, 9]]) s.set(x, y, HAND_SKIN[2])
+  stroke(s, [6, 15], [3 + flex * 0.5, 19], HAND_SKIN[1], HAND_SKIN[0])
+  return s
+}
+const hands = [0, 1, 2].map(hallucination)
+writePng('src/assets/hand-frames.png', HAND.w * hands.length, HAND.h, (x, y) => hands[Math.floor(x / HAND.w)].get(x % HAND.w, y))
+console.log(`hand-frames.png: ${hands.length} frames of ${HAND.w}×${HAND.h}`)
