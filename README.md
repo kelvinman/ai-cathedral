@@ -74,6 +74,7 @@ Every push to `main` is tested and deployed to GitHub Pages
 
 ## Credits
 
-See `src/credits.ts`, also shown in game under Settings → Save and credits → Credits.
+Original concept with Jon, Daniel and Victoria, made at the Friends of Figma AI Impact
+Workshop. See `src/credits.ts`, also shown in game under Settings → Save and credits → Credits.
 Fonts: Pixelify Sans, Silkscreen and VT323 (SIL Open Font License). Palette: Endesga 32
 by ENDESGA. Built with Claude (Anthropic).
