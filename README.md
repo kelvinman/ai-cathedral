@@ -30,7 +30,7 @@ the nave to the tomb where the Logos began.
   danger colour, screen shake, fullscreen, and save codes to back up progress.
 
 ![Couch co-op in the nave](docs/coop.jpg)
-![The tomb of the Logos](docs/tomb.jpg)
+![Sermon 18, in the tomb of the Logos](docs/tomb.jpg)
 ![Followers de-rendering](docs/derender.jpg)
 
 ## Controls
