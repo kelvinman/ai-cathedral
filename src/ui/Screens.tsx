@@ -46,7 +46,14 @@ export function SermonBanner({ wave, waveState, curse }: { wave: number; waveSta
   return null
 }
 
-export type MenuItem = { label: string; key: string; style: string; run: () => void }
+export type MenuItem = {
+  label: string
+  key: string
+  style: string
+  run: () => void
+  /** Rows with a value (volume): ← → or a tap on the ◀ / ▶ side steps it. */
+  adjust?: (delta: number) => void
+}
 
 /** A vertical list of buttons moved through with ↑ ↓; shared by the pause and settings pages. */
 export function MenuPanel({
@@ -76,7 +83,15 @@ export function MenuPanel({
             tabIndex={-1}
             className={`${item.style} ${itemIndex === index ? 'is-selected' : ''}`}
             onPointerEnter={() => onSelect(itemIndex)}
-            onClick={item.run}
+            onClick={(event) => {
+              if (item.adjust) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                const across = (event.clientX - rect.left) / rect.width
+                if (across < 0.33) return item.adjust(-1)
+                if (across > 0.67) return item.adjust(1)
+              }
+              item.run()
+            }}
           >
             {item.label}
             {item.key && <kbd>{item.key}</kbd>}

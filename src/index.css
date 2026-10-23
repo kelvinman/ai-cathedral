@@ -996,6 +996,109 @@
   }
 }
 
+/* Keyboard hints mean nothing on a touch screen: cards and buttons are tapped directly. */
+@media (pointer: coarse) {
+  .choose-hint,
+  .primary kbd,
+  .secondary kbd,
+  .ghost kbd {
+    display: none;
+  }
+}
+
+/* Short screens (phones held sideways): compact menus so every button fits without scrolling. */
+@media (max-height: 520px) {
+  .overlay {
+    padding: 8px;
+  }
+
+  .panel {
+    gap: 8px;
+    padding: 4px 12px 2px;
+  }
+
+  .sigil {
+    display: none;
+  }
+
+  .panel h1 {
+    font-size: 34px;
+  }
+
+  .panel h2 {
+    font-size: 26px;
+  }
+
+  .lede {
+    font-size: 17px;
+    line-height: 1.1;
+  }
+
+  .primary,
+  .secondary,
+  .ghost {
+    min-height: 40px;
+    font-size: 12px;
+  }
+
+  .stack {
+    gap: 4px;
+  }
+
+  /* Wide but short: keep the three cards side by side rather than stacked. */
+  .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .card {
+    min-height: 0;
+    padding: 10px 12px 10px;
+    gap: 4px;
+  }
+
+  .card strong {
+    font-size: 19px;
+  }
+
+  .card p {
+    font-size: 16px;
+  }
+
+  .stats div {
+    padding: 6px 4px;
+  }
+
+  .stats dd {
+    font-size: 24px;
+  }
+
+  .banner {
+    top: 26%;
+    padding: 10px 16px 12px;
+  }
+
+  /* Smaller, see-through touch buttons so they don't hide the low ledges. */
+  .touch-controls {
+    inset: auto 0 10px;
+  }
+
+  .touch-button {
+    width: 46px;
+    height: 46px;
+    opacity: 0.8;
+  }
+
+  .touch-button.is-large {
+    width: 56px;
+    height: 56px;
+  }
+}
+
 @media (max-width: 480px) {
   .touch-pad {
     gap: 6px;

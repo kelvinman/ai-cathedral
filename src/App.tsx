@@ -106,7 +106,6 @@ export default function App() {
   const [pauseIndex, setPauseIndex] = useState(0)
   const pauseIndexRef = useRef(0)
   const menuItemsRef = useRef<MenuItem[]>([])
-  const adjustRef = useRef<((delta: number) => void)[]>([])
   const selectPause = useCallback((index: number) => {
     pauseIndexRef.current = index
     setPauseIndex(index)
@@ -217,8 +216,8 @@ export default function App() {
           const index = pauseIndexRef.current
           if (event.code === 'ArrowUp' || event.code === 'KeyW') selectPause((index + count - 1) % count)
           if (event.code === 'ArrowDown' || event.code === 'KeyS') selectPause((index + 1) % count)
-          if (event.code === 'ArrowLeft' || event.code === 'KeyA') adjustRef.current[index]?.(-1)
-          if (event.code === 'ArrowRight' || event.code === 'KeyD') adjustRef.current[index]?.(1)
+          if (event.code === 'ArrowLeft' || event.code === 'KeyA') menuItemsRef.current[index]?.adjust?.(-1)
+          if (event.code === 'ArrowRight' || event.code === 'KeyD') menuItemsRef.current[index]?.adjust?.(1)
           if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) menuItemsRef.current[index]?.run()
           return
         }
@@ -446,18 +445,30 @@ export default function App() {
     setSettings((current) => ({ ...current, ...patch }))
   }
   const settingsItems: MenuItem[] = [
-    { label: `◀ Music ${percent(muted ? 0 : settings.music)} ▶`, key: '', style: 'secondary', run: () => change({ music: settings.music > 0 ? 0 : 0.6 }) },
-    { label: `◀ Effects ${percent(muted ? 0 : settings.effects)} ▶`, key: '', style: 'secondary', run: () => change({ effects: settings.effects > 0 ? 0 : 0.8 }) },
-    { label: `Screen shake: ${settings.shake ? 'on' : 'off'}`, key: '', style: 'secondary', run: () => change({ shake: !settings.shake }) },
+    {
+      label: `◀ Music ${percent(muted ? 0 : settings.music)} ▶`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ music: settings.music > 0 ? 0 : 0.6 }),
+      adjust: (delta) => change({ music: clampStep(settings.music, delta * 0.1) }),
+    },
+    {
+      label: `◀ Effects ${percent(muted ? 0 : settings.effects)} ▶`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ effects: settings.effects > 0 ? 0 : 0.8 }),
+      adjust: (delta) => change({ effects: clampStep(settings.effects, delta * 0.1) }),
+    },
+    {
+      label: `Screen shake: ${settings.shake ? 'on' : 'off'}`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ shake: !settings.shake }),
+      adjust: () => change({ shake: !settings.shake }),
+    },
     { label: 'Back', key: 'Esc', style: 'ghost', run: () => showPauseView('menu') },
   ]
-  const settingsAdjust = [
-    (delta: number) => change({ music: clampStep(settings.music, delta * 0.1) }),
-    (delta: number) => change({ effects: clampStep(settings.effects, delta * 0.1) }),
-    () => change({ shake: !settings.shake }),
-  ]
   menuItemsRef.current = pauseView === 'settings' ? settingsItems : pauseItems
-  adjustRef.current = pauseView === 'settings' ? settingsAdjust : []
 
   const playing = phase === 'playing'
 
