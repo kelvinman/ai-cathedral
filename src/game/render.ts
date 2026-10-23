@@ -3,7 +3,7 @@ import cathedralUrl from '../assets/cathedral-sprites.png'
 import cryptUrl from '../assets/crypt-sprites.png'
 import tombUrl from '../assets/tomb-sprites.png'
 import vaultUrl from '../assets/vault-sprites.png'
-import enemyUrl from '../assets/enemy-sprite.png'
+import followerUrl from '../assets/follower-frames.png'
 import playerUrl from '../assets/player-frames.png'
 import {
   BRICK,
@@ -169,12 +169,12 @@ export type Assets = {
   /** Each animation frame, outlined, plus a pale silhouette for the dash and its trail. */
   player: Record<PlayerFrame, { base: Sprite; ghost: Sprite }>
   enemy: {
-    /** Followers in each arena's dress. */
-    marked: Record<ArenaId, Record<'acolyte' | 'zealot' | 'bishop' | 'elite', Sprite>>
-    final: Sprite
-    flash: Sprite
-    slowed: Sprite
-    rooted: Sprite
+    /** Each follower's frames, outlined, in each arena's dress. */
+    dressed: Record<ArenaId, Record<FollowerBody, Sprite[]>>
+    /** Silhouettes for hit flashes and the slow and root effects, per frame. */
+    flash: Record<FollowerBody, Sprite[]>
+    slowed: Record<FollowerBody, Sprite[]>
+    rooted: Record<FollowerBody, Sprite[]>
   }
   skull: { base: Sprite; flash: Sprite }
 }
@@ -233,7 +233,6 @@ function outlined(
   image: CanvasImageSource & { width: number; height: number },
   outline: string,
   tint?: [string, number],
-  mark?: ArenaId,
 ) {
   const tinted = canvas(image.width, image.height)
   tinted.ctx.drawImage(image, 0, 0)
@@ -242,11 +241,7 @@ function outlined(
     tinted.ctx.globalAlpha = tint[1]
     tinted.ctx.fillStyle = tint[0]
     tinted.ctx.fillRect(0, 0, image.width, image.height)
-    tinted.ctx.globalCompositeOperation = 'source-over'
-    tinted.ctx.globalAlpha = 1
   }
-  // Drawn after the tint, so a Hype Bishop's red glow doesn't muddy its arena's mark.
-  if (mark) drawPixels(tinted.ctx, ARENA_MARKS[mark])
   const edge = silhouette(image, outline)
   const { element, ctx } = canvas(image.width + 2, image.height + 2)
   for (const [x, y] of [
@@ -872,18 +867,39 @@ function buildVignette(rgb: string, steps: number[]) {
   return element
 }
 
+function buildFollowers(sheet: HTMLImageElement): Assets['enemy'] {
+  const bodies = Object.keys(FOLLOWER_FRAMES) as FollowerBody[]
+  const frames = (body: FollowerBody, arena: ArenaId) =>
+    Array.from({ length: FOLLOWER_FRAMES[body] }, (_, index) =>
+      crop(sheet, [index * FOLLOWER_FRAME.w, followerRow(body, arena) * FOLLOWER_FRAME.h, FOLLOWER_FRAME.w, FOLLOWER_FRAME.h]),
+    )
+  const silhouettes = (color: string) =>
+    Object.fromEntries(bodies.map((body) => [body, frames(body, 'cathedral').map((frame) => silhouette(frame, color))])) as Record<FollowerBody, Sprite[]>
+  return {
+    dressed: Object.fromEntries(
+      FOLLOWER_ARENAS.map((arena) => [
+        arena,
+        Object.fromEntries(bodies.map((body) => [body, frames(body, arena).map((frame) => outlined(frame, FOLLOWER_OUTLINES[body]))])),
+      ]),
+    ) as Assets['enemy']['dressed'],
+    flash: silhouettes('#ffffff'),
+    slowed: silhouettes('#ff2a40'),
+    rooted: silhouettes('#a77bff'),
+  }
+}
+
 let assetsPromise: Promise<Assets> | null = null
 
 export function loadAssets() {
   assetsPromise ??= Promise.all([
     loadImage(atlasUrl),
     loadImage(playerUrl),
-    loadImage(enemyUrl),
+    loadImage(followerUrl),
     loadImage(cathedralUrl),
     loadImage(cryptUrl),
     loadImage(vaultUrl),
     loadImage(tombUrl),
-  ]).then(([atlas, player, enemy, cathedral, crypt, vault, tomb]) => {
+  ]).then(([atlas, player, followers, cathedral, crypt, vault, tomb]) => {
     const skull = crop(atlas, ATLAS.skull)
     const sheets: Sheets = { atlas, cathedral, crypt, vault, tomb }
     const vaultScene = buildVault(sheets)
@@ -907,27 +923,7 @@ export function loadAssets() {
           return [name, { base: outlined(frame, '#050307'), ghost: silhouette(frame, '#bcc8ff') }]
         }),
       ) as Assets['player'],
-      enemy: {
-        marked: Object.fromEntries(
-          Object.keys(ARENAS).map((id) => {
-            const mark = id as ArenaId
-            return [
-              mark,
-              {
-                acolyte: outlined(enemy, '#4a0711', undefined, mark),
-                zealot: outlined(enemy, '#4a0711', ['#7a33e0', 0.38], mark),
-                bishop: outlined(enemy, '#4a0711', ['#c0142a', 0.42], mark),
-                elite: outlined(enemy, '#f2b04a', ['#c0142a', 0.5], mark),
-              },
-            ]
-          }),
-        ) as Assets['enemy']['marked'],
-        // The Logos: a shadow-dark body with a blood-red outline.
-        final: outlined(enemy, '#e43b44', ['#181425', 0.6]),
-        flash: silhouette(enemy, '#ffffff'),
-        slowed: silhouette(enemy, '#ff2a40'),
-        rooted: silhouette(enemy, '#a77bff'),
-      },
+      enemy: buildFollowers(followers),
       skull: { base: outlined(skull, '#4a0711'), flash: silhouette(skull, '#ffffff') },
     }
   })
@@ -970,65 +966,37 @@ function drawCharacter(
 }
 
 /**
- * What the followers wear in each arena, as pixel maps over src/assets/enemy-sprite.png
- * (56×84, facing right, face at about x 35–43, rows 6–17). Each map is an origin, rows of
- * characters, and what each character paints. The nave's followers wear nothing extra.
+ * src/assets/follower-frames.png (see scripts/generate-characters.mjs): 56×84 frames facing
+ * right, one row per body per arena in FOLLOWER_ARENAS order, then one row for the Logos,
+ * who looks the same everywhere.
  */
-type PixelMap = { x: number; y: number; rows: string[]; colors: Record<string, string> }
-const ARENA_MARKS: Record<ArenaId, PixelMap[]> = {
-  cathedral: [],
-  // The ninety-nine's bones, worn as masks.
-  crypt: [
-    {
-      x: 35,
-      y: 7,
-      rows: ['..#####..', '.#######.', '#oo###oo#', '#oo###oo#', '####o###s', '.######s.', '..#o#o#..'],
-      colors: { '#': '#ead4aa', s: '#c0cbdc', o: '#181425' },
-    },
-  ],
-  // Plugged in: a glowing visor, and a cable from the back of the head.
-  vault: [
-    { x: 33, y: 10, rows: ['=============', '-------------'], colors: { '=': '#c6f5e8', '-': '#588f6d' } },
-    { x: 45, y: 9, rows: ['r'], colors: { r: '#e43b44' } },
-    {
-      x: 19,
-      y: 9,
-      rows: [
-        '.........##',
-        '........##.',
-        '.......##..',
-        '......##...',
-        '.....##....',
-        '....##.....',
-        '...##......',
-        '...##......',
-        '..##.......',
-        '..##.......',
-        '.##........',
-        '.##........',
-        '##.........',
-      ],
-      colors: { '#': '#181425' },
-    },
-  ],
-  // The devout: a gold circlet with the Eye set in it, and a gold stole.
-  tomb: [
-    { x: 29, y: 5, rows: ['=============er', '-------------rw'], colors: { '=': '#e4a672', '-': '#b86f50', e: '#e4a672', r: '#e43b44', w: '#ffffff' } },
-    { x: 34, y: 18, rows: Array.from({ length: 16 }, (_, row) => (row % 2 ? '#=' : '=#')), colors: { '=': '#e4a672', '#': '#b86f50' } },
-  ],
+type FollowerBody = 'acolyte' | 'zealot' | 'bishop' | 'elite' | 'final'
+const FOLLOWER_FRAME = { w: 56, h: 84 }
+const FOLLOWER_ARENAS: ArenaId[] = ['cathedral', 'crypt', 'vault', 'tomb']
+const FOLLOWER_FRAMES: Record<FollowerBody, number> = { acolyte: 4, zealot: 6, bishop: 4, elite: 5, final: 5 }
+const FOLLOWER_OUTLINES: Record<FollowerBody, string> = {
+  acolyte: '#4a0711',
+  zealot: '#4a0711',
+  bishop: '#4a0711',
+  elite: '#f2b04a',
+  final: '#e43b44',
 }
 
-function drawPixels(ctx: CanvasRenderingContext2D, maps: PixelMap[]) {
-  for (const map of maps) {
-    map.rows.forEach((row, y) =>
-      [...row].forEach((key, x) => {
-        const color = map.colors[key]
-        if (!color) return
-        ctx.fillStyle = color
-        ctx.fillRect(map.x + x, map.y + y, 1, 1)
-      }),
-    )
-  }
+function followerRow(body: FollowerBody, arena: ArenaId) {
+  if (body === 'final') return 16
+  return (['acolyte', 'zealot', 'bishop', 'elite'] as const).indexOf(body) * 4 + FOLLOWER_ARENAS.indexOf(arena)
+}
+
+/**
+ * Four walk frames (0–3) timed to the walk's bob, the Evangelist's crouch (4) and lunge (5),
+ * and the bosses' raised-up tell before a slam (4).
+ */
+function followerFrame(e: Enemy, body: FollowerBody) {
+  if (body === 'zealot' && e.windup > 0) return 4
+  if (body === 'zealot' && e.lunge > 0) return 5
+  if ((body === 'elite' || body === 'final') && e.bossCharge > 0) return 4
+  if (!e.onGround || Math.abs(e.vx) <= 20) return 0
+  return Math.floor((e.phase * 11 * 4) / TAU) % 4
 }
 
 const flipEnemy = (facing: number) => facing !== ENEMY_SOURCE_FACING
@@ -1041,22 +1009,23 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, aren
     const sprite = e.flash > 0 ? assets.skull.flash : assets.skull.base
     drawCharacter(ctx, sprite, snap(e.x), snap(e.y - e.h / 2 + bob) + sprite.height, PX, flipEnemy(e.facing), turnSquash)
   } else {
+    // The frames walk; this adds a little bob and sway on top.
     const walking = e.onGround && Math.abs(e.vx) > 20
-    const bob = walking ? Math.abs(Math.sin(e.phase * 11)) * 3 : 0
-    const tilt = walking ? Math.sin(e.phase * 11) * 0.05 : e.lunge > 0 ? e.facing * 0.25 : 0
-    // Tells: an Evangelist crouches before lunging; a boss shudders before slamming.
-    const crouch = e.windup > 0 ? 0.78 : 1
+    const bob = walking ? Math.abs(Math.sin(e.phase * 11)) * 1.5 : 0
+    const tilt = walking ? Math.sin(e.phase * 11) * 0.04 : 0
+    // Tells: the Evangelist's crouch and the bosses' raised arms are frames; bosses also shudder.
     const shudder = e.bossCharge > 0 ? (Math.floor(time * 30) % 2 ? PX : -PX) : 0
-    const stretch = (e.onGround ? 1 : 1.06) * crouch
-    const dressed = assets.enemy.marked[arena]
-    const base = e.title === FINAL_TITLE ? assets.enemy.final : e.elite ? dressed.elite : dressed[e.kind as 'acolyte' | 'zealot' | 'bishop']
+    const stretch = e.onGround || e.lunge > 0 ? 1 : 1.04
+    const body: FollowerBody = e.title === FINAL_TITLE ? 'final' : e.elite ? 'elite' : (e.kind as 'acolyte' | 'zealot' | 'bishop')
+    const frame = followerFrame(e, body)
     const telling = (e.windup > 0 || e.bossCharge > 0) && Math.floor(time * 12) % 2 === 0
-    const sprite = e.flash > 0 || telling ? assets.enemy.flash : base
+    const sprite = e.flash > 0 || telling ? assets.enemy.flash[body][frame] : assets.enemy.dressed[arena][body][frame]
     const flip = flipEnemy(e.facing)
     drawCharacter(ctx, sprite, e.x + shudder, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
     if (e.rooted > 0 || e.slow > 0) {
       ctx.globalAlpha = e.rooted > 0 ? 0.55 : 0.3 + Math.sin(time * 12) * 0.1
-      drawCharacter(ctx, e.rooted > 0 ? assets.enemy.rooted : assets.enemy.slowed, e.x, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
+      const effect = e.rooted > 0 ? assets.enemy.rooted : assets.enemy.slowed
+      drawCharacter(ctx, effect[body][frame], e.x, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
       ctx.globalAlpha = 1
     }
   }

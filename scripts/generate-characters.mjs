@@ -1,7 +1,11 @@
-// Generates src/assets/player-frames.png: the player's animation frames. The head is taken
-// as-is from src/assets/player-sprite.png (the original hand-drawn sprite); everything below
-// the neck is drawn here, posed per frame: a long scribe's coat over a white shirt and red
-// cravat, a quill in the front hand, trousers and boots.
+// Generates the character sheets:
+//
+// - src/assets/player-frames.png: the player's animation frames. The head is taken as-is
+//   from src/assets/player-sprite.png (the original hand-drawn sprite); everything below the
+//   neck is drawn here, posed per frame: a long scribe's coat over a white shirt and red
+//   cravat, a quill in the front hand, trousers and boots.
+// - src/assets/follower-frames.png: every follower type's walk and attack frames, once per
+//   arena in that arena's dress (bone masks, visors and cables, gold circlets).
 //
 //   node scripts/generate-characters.mjs
 //
@@ -359,3 +363,343 @@ const names = Object.keys(POSES)
 const frames = names.map((name) => drawPlayer(POSES[name]))
 writePng('src/assets/player-frames.png', FRAME.w * frames.length, FRAME.h, (x, y) => frames[Math.floor(x / FRAME.w)].get(x % FRAME.w, y))
 console.log(`player-frames.png: ${names.length} frames of ${FRAME.w}×${FRAME.h}: ${names.join(', ')}`)
+
+// ---------- Followers ----------
+// Every follower faces right (+x) and stands in a 56×84 frame with its feet on the bottom
+// row. Angles here are degrees from straight down, positive swinging forward (+x).
+
+const F = { w: 56, h: 84 }
+const ahead = (x, y, degrees, length) => {
+  const angle = (degrees * Math.PI) / 180
+  return [x + Math.sin(angle) * length, y + Math.cos(angle) * length]
+}
+/** Robe shading for polygons: lit edge on the left, shadowed band and rim on the right. */
+const robeShade = ([light, mid, dark, rim], hem = Infinity) => (x, y, left, right) => {
+  if (y >= hem) return rim
+  if (x <= left + 1) return light
+  if (x >= right - 1) return rim
+  if (x >= right - 5) return dark
+  return mid
+}
+function disc(s, cx, cy, r, color) {
+  for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y += 1) {
+    for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) {
+      const c = typeof color === 'function' ? color(x - cx, y - cy) : color
+      if (Math.hypot(x - cx, y - cy) <= r && c) s.set(x, y, c)
+    }
+  }
+}
+function pixels(s, x0, y0, rows, colors) {
+  rows.forEach((row, y) => [...row].forEach((key, x) => colors[key] && s.set(x0 + x, y0 + y, colors[key])))
+}
+/** Two small feet under a robe, one stepping ahead of the other. */
+function feet(s, step, colors) {
+  const [front, back] = [step, -step]
+  s.set(0, 0, null)
+  for (const [x, shade] of [[33 + front, colors[1]], [22 + back, colors[2]]]) {
+    for (let dx = 0; dx < 6; dx += 1) {
+      s.set(x + dx, 82, dx === 5 ? colors[2] : shade)
+      s.set(x + dx, 83, colors[3])
+    }
+    s.set(x + 1, 81, shade)
+    s.set(x + 2, 81, shade)
+  }
+}
+const SKIN_DARK = ['#c88d6b', '#a97a5c', '#7a5240', '#3f2832']
+const SKIN_PALE = ['#e8c3ad', '#c8978e', '#9a6b62', '#5f3a35']
+const SHOES = ['#5a4048', '#3f2832', '#2a1b22', '#120a0e']
+const WALK = [-1, 0, 1, 0]
+
+/** Fold lines down a robe that swing with its hem: a shadow crease with a lit edge beside it. */
+function folds(s, xs, top, bottom, sway, [light, , dark]) {
+  for (const x0 of xs) {
+    for (let y = top; y < bottom; y += 1) {
+      const x = Math.round(x0 + (sway * (y - top)) / (bottom - top))
+      if (!s.get(x, y) || !s.get(x - 1, y)) continue
+      s.set(x, y, dark)
+      if (y > top + 4) s.set(x - 1, y, light)
+    }
+  }
+}
+
+// The Early Adopter: hunched in a grey hood, face lit by the phone held up in both hands.
+function earlyAdopter(frame) {
+  const s = new Sprite(F.w, F.h)
+  const robe = ['#7a6d7c', '#4f4558', '#352d3d', '#18131c']
+  const sway = WALK[frame]
+  const bob = frame % 2
+  feet(s, sway * 3, SHOES)
+  // A hunched back, the robe flaring to the hem.
+  polygon(s, [[19, 24 + bob], [28, 20 + bob], [35, 23 + bob], [40, 36 + bob], [42 + sway, 81], [12 + sway, 81], [12, 60], [15, 38 + bob]], robeShade(robe, 80))
+  folds(s, [20, 27, 35], 46 + bob, 80, sway * 2, robe)
+  // Wide sleeves reach forward to the phone.
+  limb(s, [32, 30 + bob], [36, 40 + bob], 3.4, robe)
+  limb(s, [36, 40 + bob], [43, 33 + bob], 3, robe)
+  limb(s, [43, 33 + bob], [45, 31 + bob], 1.9, SKIN_DARK)
+  // The hood, bowed toward the screen: dark inside, the face lit from below.
+  disc(s, 33, 18 + bob, 9.5, (dx, dy) => (dx + dy < -9 ? robe[0] : dx > 5 && dy > -3 ? null : dy > 6 ? robe[2] : robe[1]))
+  disc(s, 38, 21 + bob, 5.5, '#18131c')
+  const face = { x: 39, y: 22 + bob }
+  disc(s, face.x, face.y, 3.6, (dx, dy) => (dy > 2 ? '#9be8d6' : dx < -1.5 ? SKIN_DARK[2] : SKIN_DARK[1]))
+  s.set(face.x + 1, face.y - 1, '#181425')
+  s.set(face.x + 3, face.y - 1, '#181425')
+  // The phone, its screen toward the face, glow on the hood's rim.
+  pixels(s, 44, 25 + bob, ['##', 'g#', 'g#', 'g#', '##'], { '#': '#181425', g: '#c6f5e8' })
+  for (const [x, y] of [[41, 26], [42, 27], [36, 27]]) s.set(x, y + bob, '#588f6d')
+  return { sprite: s, face, chest: { x: 28, y: 32 + bob, length: 20 } }
+}
+
+// The Evangelist: wiry and leaning forward, shouting, an AGI placard held high.
+const STEP4 = [
+  [28, 14],
+  [4, -4],
+  [-24, -26],
+  [8, -52],
+]
+function evangelist(frame) {
+  const s = new Sprite(F.w, F.h)
+  const tunic = ['#9a6cc8', '#6a4494', '#452866', '#1b0f29']
+  const legs = ['#5a4f62', '#3f3648', '#2a2332', '#120e16']
+  const hair = '#24182a'
+  const pose =
+    frame === 4
+      ? { lean: 30, hip: [22, 64], front: [55, 30], back: [-35, -70], signArm: [-150, 30] }
+      : frame === 5
+        ? { lean: 55, hip: [18, 58], front: [60, 40], back: [-60, -60], signArm: [100, 20] }
+        : { lean: 14, hip: [24, 56], front: STEP4[frame], back: STEP4[(frame + 2) % 4], signArm: [175, 10] }
+  const [hx, hy] = pose.hip
+  const legChain = ([thigh, shin], palette) => {
+    const knee = ahead(hx, hy, thigh, 13)
+    const ankle = ahead(knee[0], knee[1], shin, 13)
+    limb(s, [hx, hy], knee, 2.8, palette)
+    limb(s, knee, ankle, 2.3, palette)
+    limb(s, [ankle[0] - 1, ankle[1] + 1], [ankle[0] + 4, ankle[1] + 1], 1.8, SHOES)
+    return ankle
+  }
+  legChain(pose.back, ['#3f3648', '#2a2332', '#1e1926', '#120e16'])
+  legChain(pose.front, legs)
+  // Torso: a ragged tunic, broad at the shoulders, leaning into the walk.
+  const shoulder = ahead(hx, hy, 180 - pose.lean, 20)
+  const axis = [(shoulder[0] - hx) / 20, (shoulder[1] - hy) / 20]
+  const across = [-axis[1], axis[0]]
+  const at = ([x, y], width, along = 0) => [
+    [x + across[0] * width + axis[0] * along, y + across[1] * width + axis[1] * along],
+    [x - across[0] * width + axis[0] * along, y - across[1] * width + axis[1] * along],
+  ]
+  const [shoulderA, shoulderB] = at(shoulder, 6)
+  const [hemA, hemB] = at([hx, hy], 6, -5)
+  polygon(s, [shoulderA, shoulderB, hemB, [hemB[0] * 0.5 + hemA[0] * 0.5, hemB[1] * 0.5 + hemA[1] * 0.5 + 2], hemA], robeShade(tunic))
+  const sash = at(ahead(hx, hy, 180 - pose.lean, 8), 6)
+  limb(s, sash[0], sash[1], 1, ['#e4a672', '#b86f50', '#b86f50', '#743f39'])
+  // Sign arm (behind the head) holding the placard up on a short pole.
+  const elbow = ahead(shoulder[0], shoulder[1], pose.signArm[0], 8)
+  const hand = ahead(elbow[0], elbow[1], pose.signArm[0] + pose.signArm[1], 7)
+  limb(s, shoulder, elbow, 2.3, SKIN_DARK)
+  limb(s, elbow, hand, 2.1, SKIN_DARK)
+  const poleTop = [hand[0], hand[1] - 9]
+  limb(s, [hand[0], hand[1] + 2], poleTop, 0.9, ['#b86f50', '#743f39', '#743f39', '#3f2832'])
+  // The placard: cream board, red letters, kept inside the frame.
+  const bx = Math.max(0, Math.min(F.w - 17, Math.round(poleTop[0] - 8)))
+  const by = Math.max(0, Math.round(poleTop[1] - 9))
+  for (let y = 0; y < 10; y += 1) for (let x = 0; x < 17; x += 1) s.set(bx + x, by + y, x === 0 || y === 0 || x === 16 || y === 9 ? '#743f39' : '#ead4aa')
+  pixels(s, bx + 3, by + 2, ['.#..##.###', '#.#.#...#.', '###.#.#.#.', '#.#.#.#.#.', '#.#..##.###'], { '#': '#be353d' })
+  // Head: shouting, hair wild.
+  const face = { x: Math.min(F.w - 6, Math.round(shoulder[0] + 4)), y: Math.round(shoulder[1] - 7) }
+  disc(s, face.x, face.y, 5, (dx, dy) => (dx < -2 ? SKIN_DARK[2] : dy < -2 && dx < 1 ? SKIN_DARK[0] : SKIN_DARK[1]))
+  for (const [dx, dy] of [[-5, -4], [-6, -2], [-4, -6], [-2, -7], [0, -7], [2, -6], [-7, 0], [-6, 1], [-3, -5], [-1, -5], [1, -5], [-5, -1], [-4, -3]]) s.set(face.x + dx, face.y + dy, hair)
+  s.set(face.x + 2, face.y - 1, '#181425')
+  s.set(face.x + 4, face.y + 2, '#3f2832')
+  s.set(face.x + 4, face.y + 3, '#3f2832')
+  // Front arm: a pointing fist.
+  const frontElbow = ahead(shoulder[0], shoulder[1], 70 + (frame === 5 ? 20 : 0), 8)
+  const fist = ahead(frontElbow[0], frontElbow[1], 95, 7)
+  limb(s, shoulder, frontElbow, 2.5, tunic)
+  limb(s, frontElbow, fist, 2.2, SKIN_DARK)
+  return { sprite: s, face, chest: { x: Math.round(shoulder[0]), y: Math.round(shoulder[1] + 3), length: 10 } }
+}
+
+// The Hype Bishop: a tall mitre with the Eye on it, a wide red cope, a gold crozier.
+function hypeBishop(frame) {
+  const s = new Sprite(F.w, F.h)
+  const cope = ['#d8564f', '#9e2835', '#792831', '#3e1017']
+  const gold = ['#ead4aa', '#e4a672', '#b86f50', '#743f39']
+  const sway = WALK[frame]
+  const bob = frame % 2
+  feet(s, sway * 2, SHOES)
+  // A round, self-satisfied body.
+  polygon(s, [[18, 30 + bob], [38, 30 + bob], [46, 48 + bob], [47 + sway, 81], [11 + sway, 81], [12, 50 + bob]], robeShade(cope, 80))
+  folds(s, [17, 23, 38, 43], 50 + bob, 79, sway * 2, cope)
+  // The back sleeve hangs at its side.
+  limb(s, [19, 34 + bob], [15, 52 + bob], 3.6, cope)
+  // Gold orphrey down the front and along the hem.
+  for (let y = 31 + bob; y < 81; y += 1) {
+    const x = Math.round(31 + (y - 31) * 0.12 + sway * ((y - 31) / 50))
+    s.set(x, y, gold[1])
+    s.set(x + 1, y, gold[2])
+  }
+  for (let x = 12 + sway; x < 47 + sway; x += 1) s.set(x, 79, x % 4 ? gold[1] : gold[2])
+  // Face and jowls under the mitre.
+  const face = { x: 32, y: 26 + bob }
+  disc(s, face.x, face.y, 5.5, (dx, dy) => (dx < -3 ? SKIN_PALE[2] : dy > 3 ? SKIN_PALE[2] : SKIN_PALE[1]))
+  s.set(face.x + 2, face.y - 1, '#181425')
+  s.set(face.x + 4, face.y + 2, SKIN_PALE[3])
+  // The mitre: two tall peaks, banded in gold, the Eye on its face.
+  polygon(s, [[26, 22 + bob], [38, 22 + bob], [36, 6 + bob], [32, 1 + bob], [28, 6 + bob]], (x, y, left, right) =>
+    x <= left + 1 ? '#f2f0f5' : x >= right - 2 ? '#b9b5c0' : '#e6e2ea',
+  )
+  for (let x = 26; x < 39; x += 1) s.set(x, 21 + bob, gold[1])
+  pixels(s, 30, 11 + bob, ['.###.', '#.r.#', '.###.'], { '#': gold[2], r: '#e43b44' })
+  // Crozier in the front hand, with a curled gold crook.
+  limb(s, [36, 38 + bob], [44, 46 + bob], 3, cope)
+  limb(s, [44, 46 + bob], [46, 44 + bob], 2, SKIN_PALE)
+  limb(s, [47, 10 + bob], [47, 82], 1, gold)
+  pixels(s, 44, 3 + bob, ['.###.', '#...#', '#..#.', '.#...', '..#..', '..#..', '..#..'], { '#': gold[1] })
+  return { sprite: s, face, chest: { x: 26, y: 33 + bob, length: 30 } }
+}
+
+// The Arch-Deacon, the Logos's maker: an old engineer-priest with a white beard, brass
+// goggles, cables over the shoulders, and the giant wrench it slams the ground with.
+function archDeacon(frame) {
+  const s = new Sprite(F.w, F.h)
+  const vest = ['#5a6988', '#3a4466', '#262b44', '#131626']
+  const gold = ['#ead4aa', '#e4a672', '#b86f50', '#743f39']
+  const charging = frame === 4
+  const sway = charging ? 0 : WALK[frame]
+  const bob = charging ? 1 : frame % 2
+  feet(s, sway * 3, SHOES)
+  polygon(s, [[16, 30 + bob], [38, 30 + bob], [43, 50 + bob], [44 + sway, 81], [12 + sway, 81], [12, 48 + bob]], robeShade(vest, 80))
+  folds(s, [17, 33, 39], 58 + bob, 78, sway * 2, vest)
+  for (let x = 12 + sway; x < 44 + sway; x += 1) s.set(x, 78, gold[2])
+  // A belt of tools.
+  for (let x = 14; x < 42; x += 1) s.set(x, 54 + bob, '#3f2832')
+  pixels(s, 18, 55 + bob, ['#..#.##', '#..#.##', '...#...'], { '#': '#8b9bb4' })
+  // Cables draped over the shoulders like a stole: red, teal and black.
+  for (const [offset, color] of [[0, '#be353d'], [2, '#588f6d'], [4, '#181425']]) {
+    for (let y = 31; y < 62; y += 1) {
+      const x = 22 + offset + Math.round(Math.sin((y + offset) * 0.35) * 1.5)
+      s.set(x, y + bob, color)
+    }
+  }
+  // Head: bald and old, beard to the chest, goggles pushed up.
+  const face = { x: 31, y: 23 + bob }
+  disc(s, face.x, face.y, 6, (dx, dy) => (dx < -3 ? SKIN_PALE[2] : SKIN_PALE[1]))
+  polygon(s, [[26, 26 + bob], [37, 26 + bob], [35, 38 + bob], [31, 41 + bob], [27, 36 + bob]], (x, _y, left, right) =>
+    x <= left + 1 ? '#f2f0f5' : x >= right - 1 ? '#8b9bb4' : '#c0cbdc',
+  )
+  pixels(s, 26, 16 + bob, ['.##..##', '#oo##oo', '.##..##'], { '#': gold[1], o: '#9be8d6' })
+  s.set(face.x + 3, face.y, '#181425')
+  // The wrench: carried low while walking, raised overhead to slam.
+  const grip = charging ? [33, 10 + bob] : [41, 46 + bob]
+  const head = charging ? [33, -2] : [50, 22 + bob]
+  limb(s, [36, 34 + bob], grip, 3, vest)
+  limb(s, grip, head, 1.6, ['#8b9bb4', '#5a6988', '#3a4466', '#181425'])
+  const [wx, wy] = head.map(Math.round)
+  pixels(s, wx - 6, Math.max(0, wy - 4), ['.####....####.', '##############', '#####....#####', '####......####', '###........###'], { '#': gold[1], s: gold[2] })
+  for (let x = wx - 6; x < wx + 8; x += 1) s.get(x, Math.max(0, wy - 3)) && s.set(x, Math.max(0, wy - 3), gold[0])
+  disc(s, grip[0], grip[1], 2, SKIN_PALE[1])
+  return { sprite: s, face, chest: { x: 25, y: 33 + bob, length: 24 } }
+}
+
+// The Logos, in its giant body: a towering robe with the Eye for a head inside a halo of
+// runes, long arms ending in claws, and cables trailing from the hem like roots.
+function theLogos(frame) {
+  const s = new Sprite(F.w, F.h)
+  const robe = ['#4a3550', '#2c1f33', '#1a1220', '#08050a']
+  const charging = frame === 4
+  const ripple = charging ? 0 : WALK[frame]
+  // Roots of cable dragging behind.
+  for (const [start, color, length] of [[18, '#be353d', 14], [24, '#588f6d', 12], [30, '#181425', 16]]) {
+    for (let step = 0; step < length; step += 1) s.set(start - step, 82 - Math.round(Math.abs(Math.sin((step + frame) * 0.6)) * 2), color)
+  }
+  polygon(s, [[18, 26], [38, 26], [44, 44], [48 + ripple, 82], [10 - ripple, 82], [12, 44]], robeShade(robe, 82))
+  // Red seams.
+  for (let y = 30; y < 82; y += 1) {
+    s.set(Math.round(28 + (y - 30) * 0.08), y, '#be353d')
+    if (y % 9 === 0) for (let x = 14; x < 44; x += 3) s.set(x, y, '#792831')
+  }
+  // Arms: raised to the halo when it gathers itself, otherwise reaching ahead.
+  const arm = (shoulderX, angles, palette) => {
+    const elbow = ahead(shoulderX, 32, angles[0], 11)
+    const hand = ahead(elbow[0], elbow[1], angles[1], 11)
+    limb(s, [shoulderX, 32], elbow, 2.6, palette)
+    limb(s, elbow, hand, 2.2, palette)
+    for (const spread of [-25, 0, 25]) {
+      const tip = ahead(hand[0], hand[1], angles[1] + spread, 3)
+      s.set(tip[0], tip[1], '#c0cbdc')
+    }
+  }
+  arm(20, charging ? [-160, -170] : [30 - ripple * 6, 70], ['#2c1f33', '#1a1220', '#120c16', '#08050a'])
+  arm(36, charging ? [160, 170] : [60 + ripple * 6, 95], robe)
+  // Halo of gold runes behind the head, then the Eye.
+  const eye = { x: 29, y: 16 }
+  disc(s, eye.x, eye.y, 12, (dx, dy) => {
+    const r = Math.hypot(dx, dy)
+    if (r < 10.5) return null
+    return Math.abs(Math.sin(Math.atan2(dy, dx) * 8)) > 0.7 ? '#e4a672' : '#b86f50'
+  })
+  disc(s, eye.x, eye.y, 7.5, (dx, dy) => {
+    const r = Math.hypot(dx, dy)
+    if (r > 6.6) return '#181425'
+    if (r < 2.2) return '#181425'
+    if (r < 4.2) return charging ? '#ffffff' : '#e43b44'
+    return dx + dy < -3 ? '#ffffff' : '#ead4aa'
+  })
+  return { sprite: s, face: eye, chest: { x: 28, y: 30, length: 0 } }
+}
+
+// ---------- Arena dress, drawn over each follower's face and chest ----------
+const DRESS = {
+  cathedral: () => {},
+  // The ninety-nine's bones, worn as masks.
+  crypt: (s, { face }) => {
+    pixels(s, face.x - 4, face.y - 3, ['..#####..', '.#######.', '#oo###oo#', '#oo###oo#', '####o###s', '.######s.', '..#o#o#..'], {
+      '#': '#ead4aa',
+      s: '#c0cbdc',
+      o: '#181425',
+    })
+  },
+  // Plugged in: a glowing visor, a status light, and a cable from the back of the head.
+  vault: (s, { face }) => {
+    pixels(s, face.x - 5, face.y - 1, ['===========', '-----------'], { '=': '#c6f5e8', '-': '#588f6d' })
+    s.set(face.x + 6, face.y - 2, '#e43b44')
+    for (let step = 0; step < 16; step += 1) {
+      const x = face.x - 6 - Math.round(step * 0.7)
+      s.set(x, face.y - 1 + step, '#181425')
+      s.set(x + 1, face.y - 1 + step, '#181425')
+    }
+  },
+  // The devout: a gold circlet with the Eye set in red, and a gold stole down the chest.
+  tomb: (s, { face, chest }) => {
+    pixels(s, face.x - 6, face.y - 5, ['===========er', '-----------rw'], { '=': '#e4a672', '-': '#b86f50', e: '#e4a672', r: '#e43b44', w: '#ffffff' })
+    for (let y = 0; y < chest.length; y += 1) {
+      s.set(chest.x + (y % 2), chest.y + y, '#e4a672')
+      s.set(chest.x + 1 - (y % 2), chest.y + y, '#b86f50')
+    }
+  },
+}
+
+// Sheet layout, which src/game/render.ts mirrors: one row per follower type per arena (in
+// ARENA_ORDER), then one row for the Logos, who wears nothing but itself.
+const ARENA_ORDER = ['cathedral', 'crypt', 'vault', 'tomb']
+const FOLLOWERS = [
+  { name: 'acolyte', draw: earlyAdopter, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
+  { name: 'zealot', draw: evangelist, frames: ['walk0', 'walk1', 'walk2', 'walk3', 'windup', 'lunge'] },
+  { name: 'bishop', draw: hypeBishop, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
+  { name: 'elite', draw: archDeacon, frames: ['walk0', 'walk1', 'walk2', 'walk3', 'charge'] },
+]
+const rows = []
+for (const follower of FOLLOWERS) {
+  for (const arena of ARENA_ORDER) {
+    rows.push(
+      follower.frames.map((_, index) => {
+        const drawn = follower.draw(index)
+        DRESS[arena](drawn.sprite, drawn)
+        return drawn.sprite
+      }),
+    )
+  }
+}
+rows.push(['walk0', 'walk1', 'walk2', 'walk3', 'charge'].map((_, index) => theLogos(index).sprite))
+const columns = Math.max(...rows.map((row) => row.length))
+writePng('src/assets/follower-frames.png', F.w * columns, F.h * rows.length, (x, y) => rows[Math.floor(y / F.h)][Math.floor(x / F.w)]?.get(x % F.w, y % F.h) ?? null)
+console.log(`follower-frames.png: ${rows.length} rows of up to ${columns} frames of ${F.w}×${F.h}`)
