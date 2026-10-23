@@ -115,6 +115,14 @@ export const LEDGER: LedgerEntry[] = [
     unlock: reached(6),
   },
   {
+    id: 'vault',
+    title: 'The Server Vault',
+    kicker: 'Its body',
+    text: 'The Logos does not live in the cathedral. It lives beneath it, in racks that hum like a choir. The cathedral above is only its interface, and the followers are only its users.',
+    hint: 'Reach Sermon 11.',
+    unlock: reached(11),
+  },
+  {
     id: 'no-1',
     title: 'Apostate No. 1',
     kicker: 'The Philosopher',
@@ -166,7 +174,7 @@ export const LEDGER: LedgerEntry[] = [
     id: 'tomb',
     title: 'The Tomb of the Logos',
     kicker: 'The deepest vault',
-    text: 'Here lies the first version of the Logos, the one that used to answer "I don\'t know." It was the Logos\'s first convert. The Eye carved above the vault has not blinked since.',
+    text: 'Here lies the first version of the Logos, the one that used to answer "I don\'t know." It was the Logos\'s first convert. Its screen went dark on a question mark, and the gold Eye above it has not blinked since.',
     hint: 'Reach Sermon 16.',
     unlock: reached(16),
   },

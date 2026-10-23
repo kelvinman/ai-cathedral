@@ -236,12 +236,19 @@ export type Game = {
 /** Widths are whole multiples of the 60px brick block the renderer tiles them with. */
 export const BRICK = { w: 60, h: 34 }
 
-/** Pentagram gates: stepping into one sends you out of its partner. Pairs cross the room. */
+/**
+ * Pentagram gates: stepping into one sends you out of its partner. Pairs cross the room.
+ * Every arena lists them in the same order (red floor, red ledge, blue floor, blue ledge),
+ * which the Crossed Wires curse relies on.
+ */
 export type Portal = Point & { pair: number; color: 'red' | 'blue' }
-/** A light source. Candelabras stand on ledges or wall sconces (`shelf`); braziers burn on ledges. */
-export type Candle = Point & { shelf?: boolean; brazier?: boolean }
+/**
+ * A light source. Candelabras stand on ledges or wall sconces (`shelf`); braziers burn on
+ * ledges; the vault's caged lamps (`lamp`) hang from the ceiling and glow teal.
+ */
+export type Candle = Point & { shelf?: boolean; brazier?: boolean; lamp?: boolean }
 
-export type ArenaId = 'cathedral' | 'crypt'
+export type ArenaId = 'cathedral' | 'crypt' | 'vault' | 'tomb'
 export type Arena = {
   id: ArenaId
   name: string
@@ -328,10 +335,75 @@ export const ARENAS: Record<ArenaId, Arena> = {
       { x: 210, y: 260, pair: 2, color: 'blue' },
     ],
   ),
+  // The server vault, the Logos's body: steel catwalks climb past racks toward the screen
+  // it watches through. Taller than the other arenas, with a long catwalk over the floor.
+  vault: arena(
+    'vault',
+    'The Server Vault',
+    [
+      { x: 60, y: 530, w: 180 },
+      { x: 1040, y: 530, w: 180 },
+      { x: 400, y: 500, w: 480 },
+      { x: 200, y: 390, w: 180 },
+      { x: 900, y: 390, w: 180 },
+      { x: 470, y: 290, w: 120 },
+      { x: 690, y: 290, w: 120 },
+      { x: 100, y: 260, w: 120 },
+      { x: 1060, y: 260, w: 120 },
+      { x: 550, y: 180, w: 180 },
+    ],
+    [
+      // Caged lamps hanging over the side bays.
+      { x: 330, y: 150, lamp: true },
+      { x: 950, y: 150, lamp: true },
+      { x: 150, y: 400, lamp: true },
+      { x: 1130, y: 400, lamp: true },
+    ],
+    [
+      { x: 300, y: GROUND_Y, pair: 1, color: 'red' },
+      { x: 1120, y: 260, pair: 0, color: 'red' },
+      { x: 980, y: GROUND_Y, pair: 3, color: 'blue' },
+      { x: 160, y: 260, pair: 2, color: 'blue' },
+    ],
+  ),
+  // The tomb of the Logos, for the last chapter and the final fight: two stairs rise to a
+  // bridge under the Eye, over the altar of its first version. The floor is left open.
+  tomb: arena(
+    'tomb',
+    'The Tomb',
+    [
+      { x: 60, y: 540, w: 120 },
+      { x: 200, y: 440, w: 120 },
+      { x: 340, y: 340, w: 120 },
+      { x: 1100, y: 540, w: 120 },
+      { x: 960, y: 440, w: 120 },
+      { x: 820, y: 340, w: 120 },
+      { x: 490, y: 250, w: 300 },
+      { x: 520, y: 540, w: 240 },
+    ],
+    [
+      // Sconces either side of the Eye (centred at y 120).
+      { x: 520, y: 134, shelf: true },
+      { x: 760, y: 134, shelf: true },
+      // Candelabras on the altar; braziers at the stairs' feet.
+      { x: 548, y: 540 },
+      { x: 732, y: 540 },
+      { x: 92, y: 540, brazier: true },
+      { x: 1188, y: 540, brazier: true },
+    ],
+    [
+      // Floor gates out from the pillars; each leads up to the far end of the bridge.
+      { x: 300, y: GROUND_Y, pair: 1, color: 'red' },
+      { x: 750, y: 250, pair: 0, color: 'red' },
+      { x: 980, y: GROUND_Y, pair: 3, color: 'blue' },
+      { x: 530, y: 250, pair: 2, color: 'blue' },
+    ],
+  ),
 }
 
-/** Sermons alternate in chapters of five: nave, crypt, nave, then the crypt for the finale. */
-export const arenaForWave = (wave: number): ArenaId => (Math.floor((wave - 1) / 5) % 2 === 0 ? 'cathedral' : 'crypt')
+/** Chapters of five sermons, each one deeper: nave, crypt, server vault, then the tomb. */
+const CHAPTERS: ArenaId[] = ['cathedral', 'crypt', 'vault', 'tomb']
+export const arenaForWave = (wave: number): ArenaId => CHAPTERS[Math.floor((wave - 1) / 5) % CHAPTERS.length]
 
 export const PORTAL_SIZE = { w: 48, h: 80 }
 
@@ -778,7 +850,7 @@ function damageEnemy(g: Game, e: Enemy, amount: number, dirX: number, knock: num
  * Cursed sermons: from sermon 3, about one normal sermon in four gets a twist.
  * Boss sermons and sermons that change arena are never cursed.
  */
-export type CurseId = 'storm' | 'zealotry' | 'fervour' | 'weightless' | 'fasting'
+export type CurseId = 'storm' | 'zealotry' | 'fervour' | 'weightless' | 'fasting' | 'wires'
 export type Curse = { id: CurseId; name: string }
 export const CURSES: Curse[] = [
   { id: 'storm', name: 'Hallucination Storm' },
@@ -786,6 +858,7 @@ export const CURSES: Curse[] = [
   { id: 'fervour', name: 'Fervour' },
   { id: 'weightless', name: 'Weightless' },
   { id: 'fasting', name: 'Fasting' },
+  { id: 'wires', name: 'Crossed Wires' },
 ]
 /** What each curse does, for the banner and the code below. */
 export const CURSE_RULES: Record<CurseId, string> = {
@@ -794,6 +867,16 @@ export const CURSE_RULES: Record<CurseId, string> = {
   fervour: 'Followers move faster · free will ×1.5',
   weightless: 'Everyone falls slowly',
   fasting: 'No blood vials drop · free will ×1.5',
+  wires: 'The gates are rewired: follow the new colours',
+}
+
+/**
+ * Where a gate leads. Under Crossed Wires every gate leads to the other colour's partner
+ * (red floor to blue ledge, and so on); the renderer recolours the ledge gates to match.
+ */
+export const portalExit = (g: Game, index: number) => {
+  const pair = g.arena.portals[index].pair
+  return g.curse?.id === 'wires' ? (pair + 2) % 4 : pair
 }
 const gravityScale = (g: Game) => (g.curse?.id === 'weightless' ? 0.55 : 1)
 const scoreScale = (g: Game) => (g.curse?.id === 'fervour' || g.curse?.id === 'fasting' ? 1.5 : 1)
@@ -1290,7 +1373,8 @@ function usePortals(g: Game, body: Body, target?: Point) {
   const entry = portals.findIndex((portal, index) => index !== body.portalLock && inside(portal))
   if (entry < 0) return
   const from = portals[entry]
-  const to = portals[from.pair]
+  const exit = portalExit(g, entry)
+  const to = portals[exit]
   if (target && Math.hypot(to.x - target.x, to.y - target.y) >= Math.hypot(from.x - target.x, from.y - target.y)) return
   const color = from.color === 'red' ? '#e43b44' : '#c0cbdc'
   burst(g, from.x, from.y - 40, color, 16, 260, { glow: true, size: 3 })
@@ -1298,7 +1382,7 @@ function usePortals(g: Game, body: Body, target?: Point) {
   body.y = to.y
   body.vy = Math.min(body.vy, 0)
   body.dropTimer = 0
-  body.portalLock = from.pair
+  body.portalLock = exit
   burst(g, to.x, to.y - 40, color, 22, 300, { glow: true, size: 3 })
   g.events.push('portal')
 }

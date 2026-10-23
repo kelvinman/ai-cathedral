@@ -1,4 +1,4 @@
-// Generates src/assets/cathedral-sprites.png and src/assets/ui/*.png (extra scenery and UI
+// Generates src/assets/cathedral-sprites.png, the crypt, vault and tomb sheets, and src/assets/ui/*.png (extra scenery and UI
 // pieces in the style of src/assets/gothic-sprites.png: Endesga 32 palette, 1px ink outlines,
 // light from the top-left), plus public/favicon.png and the public/og-image.png share card.
 // Every pixel is placed explicitly from the palette, so there is no anti-aliasing.
@@ -337,7 +337,9 @@ const lancet = new Sprite(40, 72)
 }
 
 // ---------- Arch ribs spanning two pillars ----------
-function arch(span, rise, thickness = 7) {
+/** `shades` runs from the lit face to the shadowed one. */
+function arch(span, rise, thickness = 7, shades = [C.stone3, C.stone2, C.stone1, C.stone0]) {
+  const [light, upper, middle, lower] = shades
   const h = rise + 2
   const s = new Sprite(span, h)
   const spring = h - 1
@@ -351,7 +353,7 @@ function arch(span, rise, thickness = 7) {
       const outer = c
       if (d > outer || d < outer - thickness) continue
       const depth = outer - d
-      let color = depth < 1 ? C.ink : depth > thickness - 1 ? C.ink : depth < 2.6 ? C.stone2 : depth < 4.5 ? C.stone1 : C.stone0
+      let color = depth < 1 ? C.ink : depth > thickness - 1 ? C.ink : depth < 2.6 ? upper : depth < 4.5 ? middle : lower
       // Voussoir joints along the curve.
       const angle = Math.atan2(spring - y, leftHalf ? x - cx : cx - x)
       const joint = Math.abs(((angle * outer) % 11) - 5.5) < 0.6
@@ -364,7 +366,7 @@ function arch(span, rise, thickness = 7) {
   for (let y = top; y < top + thickness + 3; y += 1) {
     for (let x = Math.floor(half) - 4; x < Math.floor(half) + 4; x += 1) {
       const edge = y === top || y === top + thickness + 2 || x === Math.floor(half) - 4 || x === Math.floor(half) + 3
-      s.set(x, y, edge ? C.ink : x < half - 1 ? C.stone3 : C.stone2)
+      s.set(x, y, edge ? C.ink : x < half - 1 ? light : upper)
     }
   }
   return s
@@ -699,6 +701,400 @@ const cryptPieces = {
   middleArch: [cryptMiddleArch, 0, 190],
 }
 console.log(JSON.stringify(writeSheet('src/assets/crypt-sprites.png', cryptPieces, 256, 314)))
+
+// ---------- The server vault: the Logos's body, beneath the crypt ----------
+// Steel panels, server racks, cables and cooling fans. The game draws the racks' status
+// lights on top, blinking, at the sockets listed in RACK.
+
+// Riveted steel wall panels (32×16: two 16×16 panels), one variant with vent slits.
+function vaultWall(vents) {
+  const s = new Sprite(32, 16)
+  for (let y = 0; y < 16; y += 1) {
+    for (let x = 0; x < 32; x += 1) {
+      const px = x % 16
+      let color = C.stone0
+      if (y === 0 || px === 0) color = C.stone1
+      if (y === 15 || px === 15) color = C.ink
+      s.set(x, y, color)
+    }
+  }
+  for (const ox of [0, 16]) for (const [x, y] of [[2, 2], [12, 2], [2, 12], [12, 12]]) s.set(ox + x, y, C.stone2)
+  if (vents) for (const y of [5, 7, 9, 11]) for (let x = 19; x < 29; x += 1) s.set(x, y, C.ink)
+  return s
+}
+const vaultWallA = vaultWall(false)
+const vaultWallB = vaultWall(true)
+
+// A server rack (40×100): twelve 1U units, each with drive slots and two status-light
+// sockets. Keep RACK in step with render.ts, which lights the sockets.
+const RACK = { slotTop: 8, slotH: 7, slots: 12, leds: [30, 33] }
+const rack = new Sprite(40, 100)
+{
+  const s = rack
+  s.rect(0, 0, 40, 100, C.ink)
+  s.rect(1, 1, 38, 98, C.stone0)
+  s.rect(1, 1, 38, 4, C.stone1)
+  s.rect(1, 1, 38, 1, C.stone2)
+  for (let unit = 0; unit < RACK.slots; unit += 1) {
+    const y = RACK.slotTop + unit * RACK.slotH
+    s.rect(3, y, 34, RACK.slotH - 1, C.stone1)
+    s.rect(3, y, 34, 1, C.stone2)
+    s.set(3, y + RACK.slotH - 2, C.stone0)
+    if (unit % 4 === 3) {
+      // A wide unit with a vented face.
+      for (let x = 6; x < 27; x += 2) s.set(x, y + 3, C.ink)
+    } else {
+      for (let x = 6; x < 26; x += 5) s.rect(x, y + 2, 4, 2, C.stone0)
+    }
+    for (const lx of RACK.leds) s.set(lx, y + 2, C.moss0)
+  }
+  s.rect(1, 93, 38, 6, C.stone1)
+  s.rect(1, 93, 38, 1, C.stone2)
+  s.rect(4, 96, 4, 3, C.ink)
+  s.rect(32, 96, 4, 3, C.ink)
+}
+
+// Catwalk grating for ledges (30×17, the size of the cathedral bricks): a rail on top,
+// see-through lattice, and a truss under it. One variant has hazard stripes.
+function grate(hazard) {
+  const s = new Sprite(30, 17)
+  for (let y = 0; y < 17; y += 1) {
+    for (let x = 0; x < 30; x += 1) {
+      let color = null
+      if (y === 0) color = hazard && (x >> 2) % 2 ? C.ink : hazard ? C.gold1 : C.stone3
+      else if (y === 1) color = hazard && (x >> 2) % 2 ? C.ink : hazard ? C.gold0 : C.stone2
+      else if (y === 2) color = C.stone1
+      else if (y <= 11) color = (x + y) % 4 === 0 || (x - y + 40) % 4 === 0 ? C.stone1 : null
+      else if (y === 12) color = C.stone2
+      else if (y <= 14) color = C.stone1
+      else if (y === 15) color = C.stone0
+      else color = C.ink
+      if ((x === 0 || x === 29) && y > 1) color = C.ink
+      if (color) s.set(x, y, color)
+    }
+  }
+  return s
+}
+const grateA = grate(false)
+const grateB = grate(true)
+
+// Diamond-tread steel floor plate (30×17).
+const floorPlate = new Sprite(30, 17)
+{
+  const s = floorPlate
+  for (let y = 0; y < 17; y += 1) {
+    for (let x = 0; x < 30; x += 1) {
+      let color = C.stone1
+      if (y === 0) color = C.stone3
+      else if (y === 1) color = C.stone2
+      else if (y >= 15) color = C.stone0
+      if (x === 0 || x === 29 || y === 16) color = C.ink
+      s.set(x, y, color)
+    }
+  }
+  for (let y = 4; y < 14; y += 3) {
+    for (let x = 3 + ((y / 3) % 2) * 3; x < 27; x += 6) {
+      s.set(x, y, C.stone2)
+      s.set(x + 1, y - 1, C.stone3)
+      s.set(x + 1, y, C.stone0)
+    }
+  }
+}
+
+// The screen the Logos watches through (88×64): its eye drawn in glowing scanlines.
+const watchScreen = new Sprite(88, 64)
+{
+  const s = watchScreen
+  s.rect(0, 0, 88, 54, C.ink)
+  s.rect(1, 1, 86, 52, C.stone1)
+  s.rect(1, 1, 86, 1, C.stone2)
+  s.rect(1, 1, 1, 52, C.stone2)
+  s.rect(5, 5, 78, 44, C.ink)
+  for (let y = 6; y < 48; y += 2) for (let x = 6; x < 82; x += 1) s.set(x, y, C.stone0)
+  const cx = 43.5
+  const cy = 26.5
+  for (let y = 6; y < 48; y += 1) {
+    for (let x = 6; x < 82; x += 1) {
+      const dx = x - cx
+      const dy = y - cy
+      const lidH = 13 * Math.cos(Math.min(Math.PI / 2, (Math.abs(dx) / 30) * (Math.PI / 2)))
+      let color = null
+      if (Math.abs(dx) < 30 && Math.abs(Math.abs(dy) - lidH) < 0.9) color = C.moss2
+      const r = Math.hypot(dx, dy)
+      if (r < 10.5 && Math.abs(dy) < lidH) color = r > 9.3 ? C.moss2 : r > 4 ? C.moss1 : C.ink
+      if (Math.hypot(dx + 2, dy + 2) < 1.6) color = C.white
+      // Scanlines dim every third row of the picture.
+      if (color && y % 3 === 0) color = color === C.moss2 ? C.moss1 : color === C.moss1 ? C.moss0 : color
+      if (color) s.set(x, y, color)
+    }
+  }
+  s.rect(38, 54, 12, 6, C.stone1)
+  s.rect(38, 54, 2, 6, C.stone2)
+  s.rect(26, 60, 36, 4, C.stone2)
+  s.rect(26, 60, 36, 1, C.stone3)
+  s.outline()
+}
+
+// A cooling fan in a round housing (24×24).
+const fan = new Sprite(24, 24)
+{
+  const c = 11.5
+  for (let y = 0; y < 24; y += 1) {
+    for (let x = 0; x < 24; x += 1) {
+      const dx = x - c
+      const dy = y - c
+      const r = Math.hypot(dx, dy)
+      if (r > 11.8) continue
+      let color = r > 10.8 ? C.ink : r > 9 ? C.stone2 : C.ink
+      if (r <= 9 && Math.sin(Math.atan2(dy, dx) * 3 + r * 0.35) > 0.25) color = r < 6 ? C.stone2 : C.stone1
+      if (r < 2.6) color = C.stone3
+      if (r > 9 && r <= 10.8 && dx + dy > 4) color = C.stone1
+      fan.set(x, y, color)
+    }
+  }
+}
+
+// A caged lamp (10×16) on a short cord; the game adds the glow.
+const lamp = new Sprite(10, 16)
+{
+  const s = lamp
+  s.rect(4, 0, 2, 5, C.stone0)
+  s.rect(1, 5, 8, 2, C.stone2)
+  s.rect(3, 8, 4, 6, C.cream)
+  s.rect(4, 9, 2, 3, C.white)
+  for (const x of [1, 8]) s.rect(x, 7, 1, 8, C.stone2)
+  s.rect(1, 14, 8, 1, C.stone1)
+  s.outline()
+}
+
+// Pipes: a vertical run (12×16, tiles downwards) and a horizontal one (16×12).
+const pipeShades = [C.ink, C.stone3, C.stone2, C.stone2, C.stone1, C.stone1, C.stone1, C.stone1, C.stone0, C.stone0, C.stone0, C.ink]
+const pipeV = new Sprite(12, 16)
+const pipeH = new Sprite(16, 12)
+for (let a = 0; a < 16; a += 1) {
+  for (let b = 0; b < 12; b += 1) {
+    const flange = a < 2 && b > 0 && b < 11
+    const color = flange ? (a === 0 ? C.stone3 : C.stone0) : pipeShades[b]
+    pipeV.set(b, a, color)
+    pipeH.set(a, b, color)
+  }
+}
+
+// Cables sagging between two hangers (160×40): three strands, one red, one teal.
+const cables = new Sprite(160, 40)
+for (const [strand, [sag, base, highlight]] of [
+  [30, 1, C.stone1],
+  [24, 4, C.blood0],
+  [18, 7, C.moss0],
+].entries()) {
+  let previous = null
+  for (let x = 0; x < 160; x += 1) {
+    const t = (x - 79.5) / 79.5
+    const y = Math.round(base + sag * (1 - t * t))
+    const from = previous ?? y
+    for (let yy = Math.min(from, y); yy <= Math.max(from, y); yy += 1) {
+      cables.set(x, yy, highlight)
+      cables.set(x, yy + 1, C.ink)
+    }
+    previous = y
+  }
+  void strand
+}
+
+const vaultPieces = {
+  wallA: [vaultWallA, 0, 0],
+  wallB: [vaultWallB, 32, 0],
+  grateA: [grateA, 64, 0],
+  grateB: [grateB, 94, 0],
+  plate: [floorPlate, 124, 0],
+  lamp: [lamp, 154, 0],
+  fan: [fan, 166, 0],
+  pipeV: [pipeV, 192, 0],
+  pipeH: [pipeH, 206, 0],
+  rack: [rack, 0, 26],
+  screen: [watchScreen, 42, 26],
+  cables: [cables, 42, 92],
+}
+console.log(JSON.stringify(writeSheet('src/assets/vault-sprites.png', vaultPieces, 256, 132)))
+
+// ---------- The tomb of the Logos: the deepest vault ----------
+// Dark plum stone with gold seams, black marble steps, blood banners, the dead monolith
+// of the Logos's first version, and the gold Eye above it all.
+
+function tombWall(seed, rune) {
+  const s = new Sprite(32, 16)
+  const random = seeded(seed)
+  for (let y = 0; y < 16; y += 1) {
+    const row = y < 8 ? 0 : 1
+    for (let x = 0; x < 32; x += 1) {
+      const bx = (x + (row ? 8 : 0)) % 16
+      const ly = y % 8
+      let color = C.wood0
+      if (ly === 7 || bx === 15) color = C.ink
+      else if (ly === 0) color = C.wood1
+      else if (random() < 0.05) color = C.ink
+      s.set(x, y, color)
+    }
+  }
+  // A thin gold seam along one joint.
+  for (let x = 2; x < 14; x += 1) s.set(x, 7, C.gold0)
+  if (rune) {
+    ;['.###.', '#.#.#', '.###.'].forEach((line, y) =>
+      [...line].forEach((bit, x) => bit === '#' && s.set(21 + x, 10 + y, C.gold1)),
+    )
+  }
+  return s
+}
+const tombWallA = tombWall(61, false)
+const tombWallB = tombWall(67, true)
+
+// Black marble steps with a gold lip (30×17).
+function tombStep(inlay) {
+  const s = new Sprite(30, 17)
+  for (let y = 0; y < 17; y += 1) {
+    for (let x = 0; x < 30; x += 1) {
+      let color = C.stone0
+      if (y === 0) color = C.gold1
+      else if (y === 1) color = C.gold0
+      else if (y === 2) color = C.stone1
+      else if (y >= 15) color = C.ink
+      if ((x === 0 || x === 29) && y > 1) color = C.ink
+      if (x === 1 && y > 2 && y < 15) color = C.stone1
+      s.set(x, y, color)
+    }
+  }
+  if (inlay === 'eye') {
+    ;['..###..', '.#...#.', '#..#..#', '.#...#.', '..###..'].forEach((line, y) =>
+      [...line].forEach((bit, x) => bit === '#' && s.set(11 + x, 6 + y, C.gold0)),
+    )
+  } else if (inlay === 'band') {
+    for (let x = 3; x < 27; x += 1) s.set(x, 9, C.gold0)
+  }
+  // Veins in the marble.
+  for (const [x, y] of [[5, 5], [6, 6], [7, 6], [22, 12], [23, 11]]) s.set(x, y, C.stone1)
+  return s
+}
+const tombStepA = tombStep('plain')
+const tombStepB = tombStep('eye')
+const tombStepC = tombStep('band')
+
+// A blood banner (20×64) with the gold eye, hanging from a rod, swallow-tailed.
+const banner = new Sprite(20, 64)
+{
+  const s = banner
+  s.rect(0, 0, 20, 2, C.stone2)
+  for (let y = 2; y < 64; y += 1) {
+    for (let x = 2; x < 18; x += 1) {
+      if (y > 54 && Math.abs(x - 9.5) < (y - 54) * 0.9) continue
+      let color = x === 2 || x === 17 ? C.gold0 : x < 5 ? C.blood2 : x > 14 ? C.blood0 : C.blood1
+      if (y === 5) color = C.gold0
+      s.set(x, y, color)
+    }
+  }
+  ;['..####..', '.#....#.', '#..##..#', '.#....#.', '..####..'].forEach((line, y) =>
+    [...line].forEach((bit, x) => bit === '#' && s.set(6 + x, 18 + y, C.gold1)),
+  )
+  s.outline()
+}
+
+// The Eye of the Logos in gold (96×96): a sunburst around an almond eye with a red iris.
+const goldEye = new Sprite(96, 96)
+{
+  const c = 47.5
+  for (let y = 0; y < 96; y += 1) {
+    for (let x = 0; x < 96; x += 1) {
+      const dx = x - c
+      const dy = y - c
+      const r = Math.hypot(dx, dy)
+      const angle = Math.atan2(dy, dx)
+      let color = null
+      // Sixteen thin rays, widest near the ring.
+      const ray = Math.sin(angle * 8)
+      if (r > 30 && r < 47 && Math.abs(ray) > 0.9 - (47 - r) * 0.004) color = r < 38 ? C.gold1 : C.gold0
+      if (r <= 30) color = r > 28.6 ? C.ink : r > 26.5 ? C.gold0 : C.wood0
+      const lidH = 12 * Math.cos(Math.min(Math.PI / 2, (Math.abs(dx) / 24) * (Math.PI / 2)))
+      if (r < 26 && Math.abs(dy) < lidH) color = C.cream
+      if (r < 26 && Math.abs(dx) < 24 && Math.abs(Math.abs(dy) - lidH) < 1) color = C.ink
+      if (r < 9 && Math.abs(dy) < lidH) color = r > 7.8 ? C.ink : r > 3.4 ? C.blood3 : C.ink
+      if (Math.hypot(dx + 2.5, dy + 2.5) < 1.5) color = C.white
+      if (color) goldEye.set(x, y, color)
+    }
+  }
+  goldEye.outline()
+}
+
+// The first version of the Logos (64×150): a tall dead terminal with a cracked screen,
+// a gold capstone, and lines of its last output carved underneath.
+const monolith = new Sprite(64, 150)
+{
+  const s = monolith
+  for (let y = 0; y < 150; y += 1) {
+    const taper = y < 14 ? 14 - y : 0
+    for (let x = 6 + taper; x < 58 - taper; x += 1) {
+      const t = (x - 6) / 51
+      let color = y < 14 ? (t < 0.4 ? C.gold1 : C.gold0) : t < 0.1 ? C.stone2 : t < 0.55 ? C.stone1 : C.stone0
+      s.set(x, y, color)
+    }
+  }
+  // Dead screen.
+  s.rect(13, 28, 38, 42, C.ink)
+  s.rect(15, 30, 34, 38, C.stone0)
+  for (let y = 31; y < 67; y += 2) for (let x = 16; x < 48; x += 1) s.set(x, y, C.ink)
+  for (const [x, y] of [[30, 32], [29, 34], [31, 36], [30, 38], [28, 40], [27, 43], [33, 41], [35, 44], [36, 47]]) s.set(x, y, C.stone2)
+  // A faint question mark, the last thing it said.
+  ;['.###.', '#...#', '...#.', '..#..', '.....', '..#..'].forEach((line, y) =>
+    [...line].forEach((bit, x) => bit === '#' && s.set(30 + x, 50 + y, C.moss0)),
+  )
+  // Carved lines of output.
+  for (let y = 80; y < 128; y += 5) {
+    const random = seeded(y)
+    for (let x = 14; x < 50; x += 1) if (random() < 0.7) s.set(x, y, C.stone0)
+  }
+  // Plinth.
+  for (let y = 134; y < 150; y += 1) for (let x = 0; x < 64; x += 1) s.set(x, y, y === 134 ? C.stone3 : y < 140 ? C.stone2 : C.stone1)
+  s.outline()
+}
+
+// The altar before it (120×50): a gold-lidded black block, the centre ledge.
+const altar = new Sprite(120, 50)
+{
+  const s = altar
+  for (let y = 0; y < 50; y += 1) {
+    for (let x = 0; x < 120; x += 1) {
+      let color = y === 0 ? C.gold1 : y < 3 ? C.gold0 : y < 6 ? C.stone1 : y >= 44 ? (y === 44 ? C.stone2 : C.stone1) : x < 8 ? C.stone1 : C.stone0
+      if (y >= 6 && y < 44 && (x === 4 || x === 115)) color = C.ink
+      s.set(x, y, color)
+    }
+  }
+  for (const cx of [30, 60, 90]) {
+    for (let y = 12; y < 38; y += 1) for (let x = cx - 10; x < cx + 10; x += 1) {
+      if (y === 12 || y === 37 || x === cx - 10 || x === cx + 9) s.set(x, y, C.gold0)
+    }
+  }
+  ;['..###..', '.#...#.', '#..#..#', '.#...#.', '..###..'].forEach((line, y) =>
+    [...line].forEach((bit, x) => bit === '#' && s.set(57 + x, 22 + y, C.gold1)),
+  )
+  s.outline()
+}
+
+const tombShades = [C.gold1, C.gold0, C.wood1, C.wood0]
+const tombSideArch = arch(188, 94, 8, tombShades)
+const tombMiddleArch = arch(240, 120, 8, tombShades)
+
+const tombPieces = {
+  wallA: [tombWallA, 0, 0],
+  wallB: [tombWallB, 32, 0],
+  stepA: [tombStepA, 64, 0],
+  stepB: [tombStepB, 94, 0],
+  stepC: [tombStepC, 124, 0],
+  banner: [banner, 154, 0],
+  eye: [goldEye, 176, 0],
+  monolith: [monolith, 0, 18],
+  altar: [altar, 64, 100],
+  sideArch: [tombSideArch, 0, 170],
+  middleArch: [tombMiddleArch, 0, 268],
+}
+console.log(JSON.stringify(writeSheet('src/assets/tomb-sprites.png', tombPieces, 272, 392)))
 
 // ---------- UI frames (one PNG each, for CSS border-image 9-slicing) ----------
 // Built from the framed brick block in gothic-sprites.png (x 1, y 102): the same

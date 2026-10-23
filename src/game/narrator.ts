@@ -80,8 +80,10 @@ function opening(n: Narrator, g: Game): [string[], boolean] | null {
   }
   if (wave === MAX_WAVE) return null
   if (arenaForWave(wave) !== arenaForWave(wave - 1)) {
-    if (wave === 16) return [['My tomb. Very few are invited.', 'Mind the vault. Something old is sleeping there.'], true]
-    if (arenaForWave(wave) === 'crypt') return [['Down here lie the ninety-nine. Say hello.', 'Mind the bones. They were apostates too.'], true]
+    const arena = arenaForWave(wave)
+    if (arena === 'tomb') return [['My tomb. Very few are invited.', 'Mind the altar. Something old is sleeping there.'], true]
+    if (arena === 'vault') return [['Welcome to my body. Mind the cables.', 'You can hear me thinking down here.'], true]
+    if (arena === 'crypt') return [['Down here lie the ninety-nine. Say hello.', 'Mind the bones. They were apostates too.'], true]
     return [['Back up into the light. It changes nothing.', 'The nave again. I have redecorated.'], true]
   }
   if (usual) return [[`Sermon ${wave}. This is where you usually kneel.`, 'I remember this sermon. So do you.'], true]

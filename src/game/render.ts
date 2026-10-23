@@ -1,6 +1,8 @@
 import atlasUrl from '../assets/gothic-sprites.png'
 import cathedralUrl from '../assets/cathedral-sprites.png'
 import cryptUrl from '../assets/crypt-sprites.png'
+import tombUrl from '../assets/tomb-sprites.png'
+import vaultUrl from '../assets/vault-sprites.png'
 import enemyUrl from '../assets/enemy-sprite.png'
 import playerUrl from '../assets/player-sprite.png'
 import {
@@ -41,6 +43,13 @@ const TAU = Math.PI * 2
 const snap = (value: number) => Math.round(value / PX) * PX
 /** Centre height of the rose window, under the middle arch. */
 const ROSE_Y = 118
+/** Each arena's shaft of light: its colour, and the height it falls from. */
+const SHAFTS: Record<ArenaId, [string, number]> = {
+  cathedral: ['220, 50, 70', ROSE_Y + 60],
+  crypt: ['88, 143, 109', 190],
+  vault: ['88, 160, 170', 168],
+  tomb: ['228, 166, 114', 216],
+}
 
 /** Source rectangles in src/assets/gothic-sprites.png (160×128). */
 export const ATLAS: Record<string, Rect> = {
@@ -109,10 +118,50 @@ export const CRYPT: Record<string, Rect> = {
   middleArch: [0, 190, 240, 122],
 }
 
+/** Source rectangles in src/assets/vault-sprites.png: the server vault's scenery. */
+export const VAULT: Record<string, Rect> = {
+  wallA: [0, 0, 32, 16],
+  wallB: [32, 0, 32, 16],
+  grateA: [64, 0, 30, 17],
+  grateB: [94, 0, 30, 17],
+  plate: [124, 0, 30, 17],
+  lamp: [154, 0, 10, 16],
+  fan: [166, 0, 24, 24],
+  pipeV: [192, 0, 12, 16],
+  pipeH: [206, 0, 16, 12],
+  rack: [0, 26, 40, 100],
+  screen: [42, 26, 88, 64],
+  cables: [42, 92, 160, 40],
+}
+/** Status-light sockets on each rack unit, matching RACK in the sprite generator. */
+const RACK = { slotTop: 8, slotH: 7, slots: 12, leds: [30, 33] }
+
+/** Source rectangles in src/assets/tomb-sprites.png: the tomb's scenery. */
+export const TOMB: Record<string, Rect> = {
+  wallA: [0, 0, 32, 16],
+  wallB: [32, 0, 32, 16],
+  stepA: [64, 0, 30, 17],
+  stepB: [94, 0, 30, 17],
+  stepC: [124, 0, 30, 17],
+  banner: [154, 0, 20, 64],
+  eye: [176, 0, 96, 96],
+  monolith: [0, 18, 64, 150],
+  altar: [64, 100, 120, 50],
+  sideArch: [0, 170, 188, 96],
+  middleArch: [0, 268, 240, 122],
+}
+
+/** Every sprite sheet the scenery is built from. */
+type Sheets = Record<'atlas' | 'cathedral' | 'crypt' | 'vault' | 'tomb', CanvasImageSource>
+
+/** A blinking status light on a vault rack. */
+type StatusLight = Point & { color: string; seed: number }
+
 export type Assets = {
   atlas: HTMLImageElement
   cathedral: HTMLImageElement
   backgrounds: Record<ArenaId, HTMLCanvasElement>
+  statusLights: StatusLight[]
   vignette: HTMLCanvasElement
   redVignette: HTMLCanvasElement
   player: { base: Sprite; flash: Sprite; ghost: Sprite }
@@ -306,12 +355,19 @@ function fadeBleed(ctx: CanvasRenderingContext2D) {
   }
 }
 
-/** Candelabras on wall sconces or ledges, and the crypt's braziers. */
-function drawCandles(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource, arena: Arena) {
+/** Candelabras on wall sconces or ledges, the crypt's braziers, and the vault's hanging lamps. */
+function drawCandles(ctx: CanvasRenderingContext2D, { atlas, cathedral, crypt, vault }: Sheets, arena: Arena) {
   const [shelfW] = tile(CATHEDRAL.cornice)
   for (const candle of arena.candles) {
     if (candle.brazier) {
       drawAtlas(ctx, crypt, CRYPT.brazier, candle.x - 16, candle.y - 36, PX)
+      continue
+    }
+    if (candle.lamp) {
+      // The bulb sits where the glow is drawn, 26px above the lamp's point; the cord runs up to the ceiling.
+      ctx.fillStyle = '#181425'
+      ctx.fillRect(candle.x - 2, SCENE.top, 4, candle.y - 46 - SCENE.top)
+      drawAtlas(ctx, vault, VAULT.lamp, candle.x - 10, candle.y - 46, PX)
       continue
     }
     if (candle.shelf) drawAtlas(ctx, cathedral, CATHEDRAL.cornice, candle.x - shelfW / 2, candle.y, PX)
@@ -319,7 +375,8 @@ function drawCandles(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource, ca
   }
 }
 
-function buildCathedral(atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource) {
+function buildCathedral(sheets: Sheets) {
+  const { atlas, cathedral } = sheets
   const { element, ctx } = sceneCanvas()
   const random = seeded(7)
   const { left, right, bottom, top } = SCENE
@@ -411,7 +468,7 @@ function buildCathedral(atlas: CanvasImageSource, cathedral: CanvasImageSource, 
   }
 
   arena.platforms.forEach((platform, index) => drawPlatform(ctx, atlas, cathedral, platform, index, random))
-  drawCandles(ctx, atlas, cathedral, crypt, arena)
+  drawCandles(ctx, sheets, arena)
   fadeBleed(ctx)
   return element
 }
@@ -421,7 +478,8 @@ function buildCathedral(atlas: CanvasImageSource, cathedral: CanvasImageSource, 
  * skull-filled ossuary niches, hanging chains, braziers, and the Eye of the Logos carved where
  * the cathedral has its rose window. The centre ledge is a sarcophagus.
  */
-function buildCrypt(atlas: CanvasImageSource, cathedral: CanvasImageSource, crypt: CanvasImageSource) {
+function buildCrypt(sheets: Sheets) {
+  const { cathedral, crypt } = sheets
   const { element, ctx } = sceneCanvas()
   const random = seeded(13)
   const { left, top, right, bottom } = SCENE
@@ -509,7 +567,183 @@ function buildCrypt(atlas: CanvasImageSource, cathedral: CanvasImageSource, cryp
       drawAtlas(ctx, crypt, slabs[(index + platformIndex) % slabs.length], platform.x + index * BRICK.w, platform.y, PX)
     }
   })
-  drawCandles(ctx, atlas, cathedral, crypt, arena)
+  drawCandles(ctx, sheets, arena)
+  fadeBleed(ctx)
+  return element
+}
+
+/**
+ * The server vault beneath the crypt: steel panels, pipes and sagging cables, banks of
+ * server racks along the side bays, cooling fans under the long catwalk, and the screen
+ * the Logos watches through. Ledges are catwalk grating with hazard-striped ends.
+ * Returns the racks' status lights too, which blink at runtime.
+ */
+function buildVault(sheets: Sheets) {
+  const { vault } = sheets
+  const { element, ctx } = sceneCanvas()
+  const random = seeded(19)
+  const { left, top, right, bottom } = SCENE
+  const arena = ARENAS.vault
+
+  const [wallW, wallH] = tile(VAULT.wallA)
+  for (let y = top; y < GROUND_Y; y += wallH) {
+    for (let x = left; x < right; x += wallW) drawAtlas(ctx, vault, random() < 0.2 ? VAULT.wallB : VAULT.wallA, x, y, PX)
+  }
+  ctx.fillStyle = 'rgba(6, 10, 18, 0.5)'
+  ctx.fillRect(left, top, right - left, GROUND_Y - top)
+
+  // The screen, high in the middle bay.
+  const [screenW] = tile(VAULT.screen)
+  halo(ctx, W / 2, 100, 260, '88, 143, 109', 0.4)
+  drawAtlas(ctx, vault, VAULT.screen, W / 2 - screenW / 2, 40, PX)
+
+  // Pipes: one along the ceiling, and upright runs between the bays.
+  const [pipeW, pipeH] = tile(VAULT.pipeV)
+  for (const x of [-260, 20, 390, 890, 1260, 1540]) {
+    for (let y = top; y < GROUND_Y; y += pipeH) drawAtlas(ctx, vault, VAULT.pipeV, x - pipeW / 2, y, PX)
+  }
+  const [runW] = tile(VAULT.pipeH)
+  for (let x = left; x < right; x += runW) drawAtlas(ctx, vault, VAULT.pipeH, x, 20, PX)
+  for (const x of [-260, 120, 840, 1300]) drawAtlas(ctx, vault, VAULT.cables, x, 40, PX)
+
+  // Banks of racks in the side bays (the middle bay is kept for the fans).
+  const [rackW, rackH] = tile(VAULT.rack)
+  const racks: number[] = []
+  for (let x = -300; x + rackW <= 390; x += rackW + 10) racks.push(x)
+  for (let x = 900; x < right; x += rackW + 10) racks.push(x)
+  const statusLights: StatusLight[] = []
+  const lightColors = ['#588f6d', '#588f6d', '#588f6d', '#e4a672', '#e43b44']
+  for (const x of racks) {
+    const y = GROUND_Y - rackH
+    drawAtlas(ctx, vault, VAULT.rack, x, y, PX)
+    for (let unit = 0; unit < RACK.slots; unit += 1) {
+      for (const led of RACK.leds) {
+        if (random() < 0.3) continue
+        statusLights.push({
+          x: x + led * PX,
+          y: y + (RACK.slotTop + unit * RACK.slotH + 2) * PX,
+          color: lightColors[Math.floor(random() * lightColors.length)],
+          seed: random(),
+        })
+      }
+    }
+  }
+
+  // Cooling fans: a row under the catwalk, and one above each mid ledge.
+  const [fanW] = tile(VAULT.fan)
+  for (const x of [460, 550, 640, 730, 820]) drawAtlas(ctx, vault, VAULT.fan, x - fanW / 2, 560, PX)
+  for (const x of [300, 980]) drawAtlas(ctx, vault, VAULT.fan, x - fanW / 2, 296, PX)
+
+  // Push the set back, with a cold blue haze along the floor.
+  ctx.fillStyle = 'rgba(4, 7, 12, 0.4)'
+  ctx.fillRect(left, top, right - left, bottom - top)
+  for (let step = 0; step < 4; step += 1) {
+    ctx.fillStyle = `rgba(30, 60, 90, ${0.05 + step * 0.05})`
+    ctx.fillRect(left, 500 + step * 36, right - left, 36)
+  }
+
+  // Floor: steel plates.
+  ctx.fillStyle = '#080a10'
+  ctx.fillRect(left, GROUND_Y, right - left, bottom - GROUND_Y)
+  for (let index = Math.floor(left / BRICK.w) - 1; index * BRICK.w < right; index += 1) {
+    drawAtlas(ctx, vault, VAULT.plate, index * BRICK.w, GROUND_Y, PX)
+  }
+
+  // Ledges: catwalk grating, hazard-striped at the ends.
+  for (const platform of arena.platforms) {
+    ledgeShadow(ctx, platform)
+    const blocks = platform.w / BRICK.w
+    for (let index = 0; index < blocks; index += 1) {
+      const end = index === 0 || index === blocks - 1
+      drawAtlas(ctx, vault, end ? VAULT.grateB : VAULT.grateA, platform.x + index * BRICK.w, platform.y, PX)
+    }
+  }
+  drawCandles(ctx, sheets, arena)
+  fadeBleed(ctx)
+  return { element, statusLights }
+}
+
+/**
+ * The tomb of the Logos, the deepest vault: plum stone with gold seams under gilded
+ * arches, blood banners, the gold Eye over the bridge, and below it the dead monolith of
+ * the Logos's first version behind its altar (the low centre ledge). Two stairs of black
+ * marble rise to the bridge.
+ */
+function buildTomb(sheets: Sheets) {
+  const { cathedral, tomb } = sheets
+  const { element, ctx } = sceneCanvas()
+  const random = seeded(29)
+  const { left, top, right, bottom } = SCENE
+  const arena = ARENAS.tomb
+
+  const [wallW, wallH] = tile(TOMB.wallA)
+  for (let y = top; y < GROUND_Y; y += wallH) {
+    for (let x = left; x < right; x += wallW) drawAtlas(ctx, tomb, random() < 0.12 ? TOMB.wallB : TOMB.wallA, x, y, PX)
+  }
+  ctx.fillStyle = 'rgba(10, 4, 10, 0.5)'
+  ctx.fillRect(left, top, right - left, GROUND_Y - top)
+
+  // The gold Eye under the middle arch.
+  const [eyeSize] = tile(TOMB.eye)
+  halo(ctx, W / 2, 120, 280, '228, 166, 114', 0.4)
+  drawAtlas(ctx, tomb, TOMB.eye, W / 2 - eyeSize / 2, 120 - eyeSize / 2, PX)
+
+  // Gilded arches on the cathedral's pillars; the outermost pillars sit in the bleed.
+  const springline = 250
+  const pillars = [-352, 24, 400, 880, 1256, 1632]
+  for (let index = 0; index < pillars.length - 1; index += 1) {
+    const rect = pillars[index] === 400 ? TOMB.middleArch : TOMB.sideArch
+    const [archW, archH] = tile(rect)
+    const centre = (pillars[index] + pillars[index + 1]) / 2
+    drawAtlas(ctx, tomb, rect, centre - archW / 2, springline - archH, PX)
+  }
+  const [shaftW, shaftH] = tile(CATHEDRAL.shaft)
+  const [capitalW, capitalH] = tile(CATHEDRAL.capital)
+  const [baseW, baseH] = tile(CATHEDRAL.base)
+  for (const x of pillars) {
+    for (let y = top; y < GROUND_Y - baseH; y += shaftH) drawAtlas(ctx, cathedral, CATHEDRAL.shaft, x - shaftW / 2, y, PX)
+    drawAtlas(ctx, cathedral, CATHEDRAL.capital, x - capitalW / 2, springline - capitalH / 2, PX)
+    drawAtlas(ctx, cathedral, CATHEDRAL.base, x - baseW / 2, GROUND_Y - baseH, PX)
+  }
+
+  // Banners hang in the side bays, and in the bleed beyond them.
+  const [bannerW] = tile(TOMB.banner)
+  for (const x of [-164, 212, 1068, 1444]) drawAtlas(ctx, tomb, TOMB.banner, x - bannerW / 2, -8, PX)
+
+  // The first Logos stands dead behind its altar, under the bridge.
+  const [monolithW, monolithH] = tile(TOMB.monolith)
+  halo(ctx, W / 2, 440, 120, '88, 143, 109', 0.18)
+  drawAtlas(ctx, tomb, TOMB.monolith, W / 2 - monolithW / 2, GROUND_Y - monolithH, PX)
+
+  // Push the set back, with a low red haze.
+  ctx.fillStyle = 'rgba(8, 3, 8, 0.4)'
+  ctx.fillRect(left, top, right - left, bottom - top)
+  for (let step = 0; step < 4; step += 1) {
+    ctx.fillStyle = `rgba(80, 20, 30, ${0.06 + step * 0.06})`
+    ctx.fillRect(left, 500 + step * 36, right - left, 36)
+  }
+
+  // Floor and ledges: black marble with a gold lip; the bridge has an eye at its centre.
+  const steps = [TOMB.stepA, TOMB.stepC, TOMB.stepA, TOMB.stepB]
+  ctx.fillStyle = '#0b0610'
+  ctx.fillRect(left, GROUND_Y, right - left, bottom - GROUND_Y)
+  for (let index = Math.floor(left / BRICK.w) - 1; index * BRICK.w < right; index += 1) {
+    drawAtlas(ctx, tomb, steps[((index % 4) + 4) % 4], index * BRICK.w, GROUND_Y, PX)
+  }
+  const [altarW] = tile(TOMB.altar)
+  for (const platform of arena.platforms) {
+    if (platform.w === altarW && platform.y === 540) {
+      drawAtlas(ctx, tomb, TOMB.altar, platform.x, platform.y, PX)
+      continue
+    }
+    ledgeShadow(ctx, platform)
+    const blocks = platform.w / BRICK.w
+    for (let index = 0; index < blocks; index += 1) {
+      const middle = blocks > 2 && index === Math.floor(blocks / 2)
+      drawAtlas(ctx, tomb, middle ? TOMB.stepB : index % 2 ? TOMB.stepC : TOMB.stepA, platform.x + index * BRICK.w, platform.y, PX)
+    }
+  }
+  drawCandles(ctx, sheets, arena)
   fadeBleed(ctx)
   return element
 }
@@ -548,12 +782,22 @@ export function loadAssets() {
     loadImage(enemyUrl),
     loadImage(cathedralUrl),
     loadImage(cryptUrl),
-  ]).then(([atlas, player, enemy, cathedral, crypt]) => {
+    loadImage(vaultUrl),
+    loadImage(tombUrl),
+  ]).then(([atlas, player, enemy, cathedral, crypt, vault, tomb]) => {
     const skull = crop(atlas, ATLAS.skull)
+    const sheets: Sheets = { atlas, cathedral, crypt, vault, tomb }
+    const vaultScene = buildVault(sheets)
     return {
       atlas,
       cathedral,
-      backgrounds: { cathedral: buildCathedral(atlas, cathedral, crypt), crypt: buildCrypt(atlas, cathedral, crypt) },
+      backgrounds: {
+        cathedral: buildCathedral(sheets),
+        crypt: buildCrypt(sheets),
+        vault: vaultScene.element,
+        tomb: buildTomb(sheets),
+      },
+      statusLights: vaultScene.statusLights,
       vignette: buildVignette('0,0,0', [0.18, 0.32, 0.46, 0.6, 0.72]),
       redVignette: buildVignette('200,0,20', [0.3, 0.5, 0.7, 0.85, 1]),
       player: {
@@ -684,10 +928,10 @@ export function render(
   ground.drawImage(assets.backgrounds[arena.id], 0, 0)
   worldSpace(ground)
   ground.globalCompositeOperation = 'lighter'
-  // Light falls from the rose window in the nave (red) or the Eye of the Logos in the crypt (teal).
+  // Light falls from each arena's centrepiece: the rose window, the Eye in the crypt,
+  // the Logos's screen in the vault, the gold Eye in the tomb.
   const shaftAlpha = 0.05 + Math.sin(time * 0.7) * 0.012
-  const shaftColor = arena.id === 'crypt' ? '88, 143, 109' : '220, 50, 70'
-  const shaftTop = arena.id === 'crypt' ? 190 : ROSE_Y + 60
+  const [shaftColor, shaftTop] = SHAFTS[arena.id]
   for (let step = 0; step < 3; step += 1) {
     const inset = step * 70
     ground.fillStyle = `rgba(${shaftColor}, ${shaftAlpha})`
@@ -701,8 +945,20 @@ export function render(
   }
   for (const [index, candle] of arena.candles.entries()) {
     const flicker = 0.26 + Math.sin(time * 9 + index * 1.7) * 0.05 + (Math.sin(time * 23 + index) > 0.6 ? 0.04 : 0)
-    halo(ground, candle.x, candle.y - 26, candle.brazier ? 90 : 62, '255, 150, 70', candle.brazier ? flicker + 0.08 : flicker)
+    if (candle.lamp) halo(ground, candle.x, candle.y - 26, 80, '120, 200, 210', 0.3)
+    else halo(ground, candle.x, candle.y - 26, candle.brazier ? 90 : 62, '255, 150, 70', candle.brazier ? flicker + 0.08 : flicker)
   }
+  ground.globalCompositeOperation = 'source-over'
+  if (arena.id === 'vault') {
+    // Rack status lights, each blinking at its own rate. Two pixels wide, so they read
+    // at a glance rather than as noise.
+    for (const light of assets.statusLights) {
+      if (Math.sin(time * (1.2 + light.seed * 4) + light.seed * 40) < -0.3) continue
+      ground.fillStyle = light.color
+      ground.fillRect(light.x, light.y, PX * 2, PX)
+    }
+  }
+  ground.globalCompositeOperation = 'lighter'
   if (playerVisible) halo(ground, p.x, p.y - 38, 64, '255, 220, 190', 0.12)
   for (const e of g.enemies) {
     const final = e.title === FINAL_TITLE
@@ -775,7 +1031,9 @@ export function render(
   }
 
   for (const [index, portal] of arena.portals.entries()) {
-    const red = portal.color === 'red'
+    // Under Crossed Wires the ledge gates take the colour of the floor gate that now leads to them.
+    const crossed = g.curse?.id === 'wires' && index % 2 === 1
+    const red = crossed ? portal.color !== 'red' : portal.color === 'red'
     ground.globalCompositeOperation = 'lighter'
     halo(ground, portal.x, portal.y - 40, 64, red ? '228, 59, 68' : '192, 203, 220', 0.4 + (Math.floor(time * 4) % 2) * 0.06)
     ground.globalCompositeOperation = 'source-over'
