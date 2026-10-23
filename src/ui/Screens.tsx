@@ -291,13 +291,14 @@ export function UpgradeScreen({
                 type="button"
                 tabIndex={-1}
                 key={upgrade.id}
-                className={`card ${index === selected ? 'is-selected' : ''}`}
+                className={`card ${index === selected ? 'is-selected' : ''} ${upgrade.rare ? 'is-rare' : ''}`}
                 onPointerEnter={() => onSelect(index)}
                 onClick={() => onPick(upgrade)}
               >
                 <span className="label">{upgrade.eyebrow}</span>
                 <strong>{upgrade.title}</strong>
                 <p>{upgrade.description}</p>
+                {upgrade.cost && <p className="cost">{upgrade.cost}</p>}
                 <span className="pips" aria-label={`Level ${level} of ${upgrade.max}`}>
                   {Array.from({ length: upgrade.max }, (_, pip) => (
                     <i key={pip} className={pip < level ? 'is-on' : pip === level ? 'is-next' : ''} />

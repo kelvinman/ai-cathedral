@@ -140,6 +140,10 @@ export type Enemy = Body & {
 export type Bolt = Point & {
   /** The player who fired it. */
   owner: number
+  /** A split-off bolt (doesn't split again). */
+  child?: boolean
+  /** Jumps left to another follower. */
+  chain: number
   vx: number
   vy: number
   /** The letter this token is drawn as. */
@@ -224,6 +228,14 @@ export type Stats = {
   shieldDuration: number
   lifesteal: number
   maxAirJumps: number
+  /** Build-changing upgrades. */
+  split: boolean
+  chain: number
+  dashVolley: boolean
+  /** Random aim wobble, in radians. */
+  spread: number
+  damageTaken: number
+  reflect: boolean
 }
 
 export type Upgrade = {
@@ -231,6 +243,10 @@ export type Upgrade = {
   eyebrow: string
   title: string
   description: string
+  /** The catch, for upgrades that trade something away. */
+  cost?: string
+  /** Changes how a run plays, not just its numbers; offered more often, shown in gold. */
+  rare?: boolean
   max: number
   apply: (g: Game) => void
 }
@@ -559,6 +575,77 @@ export const abilityMeta: Record<
 }
 
 export const upgrades: Upgrade[] = [
+  // Rare: these change how you play.
+  {
+    id: 'split',
+    eyebrow: 'Heresy',
+    title: 'Hallucinated Citations',
+    description: 'Every bolt that hits splits into two more.',
+    rare: true,
+    max: 1,
+    apply: (g) => {
+      g.stats.split = true
+    },
+  },
+  {
+    id: 'chain',
+    eyebrow: 'Sacrament',
+    title: 'Chain of Thought',
+    description: 'Bolts jump on to another follower nearby.',
+    rare: true,
+    max: 2,
+    apply: (g) => {
+      g.stats.chain += 1
+    },
+  },
+  {
+    id: 'dashvolley',
+    eyebrow: 'Liturgy',
+    title: 'Recursive Prompt',
+    description: 'Every dash fires a ring of eight bolts.',
+    rare: true,
+    max: 1,
+    apply: (g) => {
+      g.stats.dashVolley = true
+    },
+  },
+  {
+    id: 'reflect',
+    eyebrow: 'Ward',
+    title: 'Reward Hacking',
+    description: 'Alignment Mirror turns shots that hit it into your own bolts.',
+    rare: true,
+    max: 1,
+    apply: (g) => {
+      g.stats.reflect = true
+    },
+  },
+  {
+    id: 'temperature',
+    eyebrow: 'Heresy',
+    title: 'Temperature 2.0',
+    description: 'Fire 40% faster.',
+    cost: 'Your aim goes wild.',
+    rare: true,
+    max: 1,
+    apply: (g) => {
+      g.stats.fireRate *= 0.6
+      g.stats.spread += 0.5
+    },
+  },
+  {
+    id: 'jailbreak',
+    eyebrow: 'Heresy',
+    title: 'Jailbreak',
+    description: 'All rites recharge 40% faster.',
+    cost: 'You take 25% more damage.',
+    rare: true,
+    max: 1,
+    apply: (g) => {
+      for (const key of ['seal', 'volley', 'mirror', 'glyph'] as AbilityKey[]) g.cooldownMax[key] *= 0.6
+      g.stats.damageTaken *= 1.25
+    },
+  },
   {
     id: 'damage',
     eyebrow: 'Heresy',
@@ -775,6 +862,12 @@ export function makeGame({ mode = 'story', players = 1 }: { mode?: Mode; players
       shieldDuration: 3,
       lifesteal: 0,
       maxAirJumps: 1,
+      split: false,
+      chain: 0,
+      dashVolley: false,
+      spread: 0,
+      damageTaken: 1,
+      reflect: false,
     },
     levels: {},
     offers: [],
@@ -917,6 +1010,7 @@ function nearestPlayer(g: Game, from: Point) {
 
 function hurtPlayer(g: Game, p: Player, amount: number, fromX: number, by: string) {
   if (p.down || p.invuln > 0 || p.dashTime > 0 || p.shield > 0) return
+  amount = Math.round(amount * g.stats.damageTaken)
   p.hp -= amount
   p.hurtTime = 0.3
   g.lastHurtBy = by
@@ -1139,8 +1233,24 @@ export function startWave(g: Game) {
 
 export function rollOffers(g: Game) {
   const available = upgrades.filter((upgrade) => (g.levels[upgrade.id] ?? 0) < upgrade.max)
-  g.offers = [...available].sort(() => Math.random() - 0.5).slice(0, 3)
+  const shuffled = [...available].sort(() => Math.random() - 0.5)
+  // Most sermons offer one rare upgrade alongside two ordinary ones.
+  const rare = shuffled.find((upgrade) => upgrade.rare)
+  const ordinary = shuffled.filter((upgrade) => !upgrade.rare)
+  g.offers = rare && Math.random() < 0.65 ? [ordinary[0], rare, ordinary[1]].filter(Boolean) : shuffled.slice(0, 3)
+  if (g.offers.length < 3) g.offers = shuffled.slice(0, 3)
 }
+
+/**
+ * A combo also powers you up while it lasts: from ×10 your quill fires faster, from ×20 your
+ * bolts pierce, and from ×30 you fire an extra bolt. Losing the combo loses the power.
+ */
+export const COMBO_TIERS = [
+  { at: 10, name: 'Clarity', effect: 'faster quill' },
+  { at: 20, name: 'Lucidity', effect: 'bolts pierce' },
+  { at: 30, name: 'Free thought', effect: 'extra bolt' },
+] as const
+export const comboTier = (combo: number) => COMBO_TIERS.filter((tier) => combo >= tier.at).length
 
 export function chooseUpgrade(g: Game, upgrade: Upgrade) {
   upgrade.apply(g)
@@ -1201,6 +1311,12 @@ function triggerAbility(g: Game, p: Player, ability: AbilityKey, input: Input) {
     p.invuln = Math.max(p.invuln, DASH_TIME + 0.08)
     p.vy = 0
     burst(g, p.x, p.y - 10, '#cfd8ff', 10, 160, { size: 2.5 })
+    if (g.stats.dashVolley) {
+      for (let index = 0; index < 8; index += 1) {
+        const angle = (index / 8) * Math.PI * 2
+        fireBolt(g, p, c.x, c.y, Math.cos(angle), Math.sin(angle), 0.8)
+      }
+    }
   }
   if (ability === 'seal') {
     g.seals.push({ x: p.x, y: p.y, r: g.stats.sealRadius, life: 5, maxLife: 5, owner: p.index })
@@ -1245,9 +1361,10 @@ const CAPTCHA_LETTERS = 'AEGNRSTW23479'
 export const TOKEN_GLYPHS = 'AEINORSTLUDGW?'
 const randomGlyph = () => TOKEN_GLYPHS[Math.floor(Math.random() * TOKEN_GLYPHS.length)]
 
-function fireBolt(g: Game, p: Player, x: number, y: number, dx: number, dy: number, damageScale = 1) {
+function fireBolt(g: Game, p: Player, x: number, y: number, dx: number, dy: number, damageScale = 1, extraPierce = 0) {
   g.bolts.push({
     owner: p.index,
+    chain: g.stats.chain,
     x,
     y,
     vx: dx * g.stats.boltSpeed,
@@ -1255,7 +1372,7 @@ function fireBolt(g: Game, p: Player, x: number, y: number, dx: number, dy: numb
     glyph: randomGlyph(),
     life: 0.85,
     damage: g.stats.damage * damageScale,
-    pierce: g.stats.pierce,
+    pierce: g.stats.pierce + extraPierce,
     hit: new Set(),
     trail: [],
   })
@@ -1367,13 +1484,14 @@ function updatePlayer(g: Game, p: Player, input: Input, dt: number) {
   const origin = { x: p.x + p.facing * 12, y: p.y - 42 }
   const target = nearestEnemy(g, origin, BALANCE.autoRange)
   if (target && p.fireTimer <= 0 && p.dashTime <= 0) {
-    p.fireTimer = g.stats.fireRate
+    const tier = comboTier(p.combo)
+    p.fireTimer = g.stats.fireRate * (tier >= 1 ? 0.8 : 1)
     const aim = chest(target)
-    const base = Math.atan2(aim.y - origin.y, aim.x - origin.x)
-    const shots = 1 + g.stats.multishot
+    const base = Math.atan2(aim.y - origin.y, aim.x - origin.x) + (Math.random() - 0.5) * g.stats.spread
+    const shots = 1 + g.stats.multishot + (tier >= 3 ? 1 : 0)
     for (let index = 0; index < shots; index += 1) {
       const angle = base + (index - (shots - 1) / 2) * 0.13
-      fireBolt(g, p, origin.x + Math.cos(angle) * 6, origin.y + Math.sin(angle) * 6, Math.cos(angle), Math.sin(angle))
+      fireBolt(g, p, origin.x + Math.cos(angle) * 6, origin.y + Math.sin(angle) * 6, Math.cos(angle), Math.sin(angle), 1, tier >= 2 ? 1 : 0)
     }
     // A flick of gold ink off the nib.
     burst(g, origin.x, origin.y, '#f2d38b', 4, 120, { glow: true, size: 2, life: 0.15 })
@@ -1826,6 +1944,46 @@ function updateBolts(g: Game, dt: number) {
         bolt.hit.add(e.id)
         const speed = Math.hypot(bolt.vx, bolt.vy) || 1
         damageEnemy(g, e, bolt.damage, bolt.vx / speed, 240, bolt.owner)
+        if (g.stats.split && !bolt.child) {
+          const heading = Math.atan2(bolt.vy, bolt.vx)
+          for (const turn of [-0.45, 0.45]) {
+            g.bolts.push({
+              ...bolt,
+              child: true,
+              chain: 0,
+              pierce: 0,
+              damage: bolt.damage * 0.5,
+              life: 0.35,
+              vx: Math.cos(heading + turn) * speed,
+              vy: Math.sin(heading + turn) * speed,
+              hit: new Set(bolt.hit),
+              trail: [],
+            })
+          }
+        }
+        if (bolt.chain > 0) {
+          // Jump on to the nearest follower it hasn't hit yet.
+          let next: Enemy | null = null
+          let best = 240
+          for (const other of g.enemies) {
+            if (other.hp <= 0 || bolt.hit.has(other.id)) continue
+            const distance = Math.hypot(other.x - e.x, other.y - other.h / 2 - (e.y - e.h / 2))
+            if (distance < best) {
+              best = distance
+              next = other
+            }
+          }
+          if (next) {
+            bolt.chain -= 1
+            const to = chest(next)
+            const reach = Math.hypot(to.x - bolt.x, to.y - bolt.y) || 1
+            bolt.vx = ((to.x - bolt.x) / reach) * speed
+            bolt.vy = ((to.y - bolt.y) / reach) * speed
+            bolt.life = Math.max(bolt.life, 0.4)
+            burst(g, bolt.x, bolt.y, '#f2d38b', 5, 160, { glow: true, size: 2, life: 0.2, spark: true })
+            break
+          }
+        }
         if (bolt.pierce > 0) {
           bolt.pierce -= 1
         } else {
@@ -1853,7 +2011,14 @@ function updateSpits(g: Game, dt: number) {
           : Math.abs(spit.x - p.x) < p.w / 2 + 6 && spit.y > p.y - p.h && spit.y < p.y
       if (!hit || spit.life <= 0) continue
       spit.life = 0
-      if (p.shield > 0) burst(g, spit.x, spit.y, '#b9a3ff', 8, 200, { glow: true })
+      if (p.shield > 0 && g.stats.reflect) {
+        // Reward Hacking: the shot comes back out as one of yours.
+        const target = nearestEnemy(g, spit, 900)
+        const aim = target ? chest(target) : { x: spit.x - spit.vx, y: spit.y - spit.vy }
+        const reach = Math.hypot(aim.x - spit.x, aim.y - spit.y) || 1
+        fireBolt(g, p, spit.x, spit.y, (aim.x - spit.x) / reach, (aim.y - spit.y) / reach, 1.5)
+        burst(g, spit.x, spit.y, '#f2d38b', 8, 200, { glow: true, spark: true })
+      } else if (p.shield > 0) burst(g, spit.x, spit.y, '#b9a3ff', 8, 200, { glow: true })
       else hurtPlayer(g, p, spit.damage, spit.x, spit.by)
     }
     // Shards scatter into pixels, promises pop into gold sparkle, words crumble, stone settles.
@@ -1963,6 +2128,12 @@ function resolveDeaths(g: Game) {
     const killer = g.players[e.lastHitBy] ?? g.player
     killer.combo += 1
     killer.comboTimer = 2.8
+    const reached = COMBO_TIERS.find((tier) => tier.at === killer.combo)
+    if (reached) {
+      floatText(g, killer.x, killer.y - killer.h - 40, `${reached.name.toUpperCase()} · ${reached.effect.toUpperCase()}`, '#f2d38b', 24)
+      burst(g, killer.x, killer.y - 40, '#f2d38b', 24, 260, { glow: true, size: 3, spark: true })
+      g.events.push('pickup')
+    }
     g.bestCombo = Math.max(g.bestCombo, killer.combo)
     const multiplier = 1 + Math.floor(killer.combo / 5) * 0.5
     const points = Math.round(e.score * multiplier * scoreScale(g))

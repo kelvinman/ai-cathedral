@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { MAX_WAVE, REVIVE_TIME, abilityMeta, type AbilityKey, type Game, type Mode, type WaveState } from '../game/engine'
+import { COMBO_TIERS, MAX_WAVE, REVIVE_TIME, abilityMeta, comboTier, type AbilityKey, type Game, type Mode, type WaveState } from '../game/engine'
 import { SPEAKER_NAMES, type Line } from '../game/narrator'
 import { ABILITY_ORDER, RiteIcon, pad } from './shared'
 
@@ -117,11 +117,14 @@ function PlayerStack({ player, index, flashing, onDash }: { player: PlayerHud; i
 function ComboOrb({ player }: { player: PlayerHud }) {
   // The liquid spans sprite rows 3–36 and drains a whole pixel row at a time.
   const fillTop = 3 + Math.round((1 - (player.combo >= 2 ? player.comboFrac : 0)) * 33)
+  // A combo of ×10, ×20 or ×30 powers you up; the orb glows and names the tier.
+  const tier = comboTier(player.combo)
   return (
-    <div className="orb" style={{ '--fill-top': `${fillTop}` } as CSSProperties} title="Combo">
+    <div className={`orb tier-${tier}`} style={{ '--fill-top': `${fillTop}` } as CSSProperties} title="Combo: chain kills for more free will, and power at ×10, ×20 and ×30">
       <span className="orb-fill" />
       <span className="orb-frame" />
       {player.combo >= 2 && <b key={player.combo}>×{player.combo}</b>}
+      {tier > 0 && <small>{COMBO_TIERS[tier - 1].name}</small>}
     </div>
   )
 }

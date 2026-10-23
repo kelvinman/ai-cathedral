@@ -224,6 +224,39 @@
   padding-top: 10px;
 }
 
+/* Combo tiers: the orb glows brighter at ×10, ×20 and ×30, and names the tier beneath. */
+.orb.tier-1 {
+  filter: drop-shadow(0 0 4px rgba(242, 211, 139, 0.6));
+}
+
+.orb.tier-2 {
+  filter: drop-shadow(0 0 7px rgba(242, 211, 139, 0.8));
+}
+
+.orb.tier-3 {
+  filter: drop-shadow(0 0 10px rgba(255, 241, 200, 1));
+  animation: tier-pulse 0.6s steps(2) infinite;
+}
+
+@keyframes tier-pulse {
+  50% {
+    filter: drop-shadow(0 0 4px rgba(255, 241, 200, 0.7));
+  }
+}
+
+.orb small {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% 2px;
+  font-family: var(--label);
+  font-size: 10px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: var(--gold1);
+  text-shadow: var(--outline);
+}
+
 /* Player two's corner (co-op): player one's, mirrored into the top right. */
 .corner.is-right {
   left: auto;
@@ -1041,6 +1074,22 @@
 .card {
   filter: brightness(0.55) saturate(0.7);
   transition: filter 120ms steps(2);
+}
+
+/* Rare upgrades change how a run plays: gold frame, and their catch in red. */
+.card.is-rare {
+  box-shadow:
+    var(--inset),
+    inset 0 0 0 var(--px) var(--gold0);
+}
+
+.card.is-rare .label {
+  color: var(--gold1);
+}
+
+.card .cost {
+  margin-top: -4px;
+  color: var(--blood3);
 }
 
 .card.is-selected {
