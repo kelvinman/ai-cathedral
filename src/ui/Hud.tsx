@@ -1,16 +1,6 @@
 import type { CSSProperties } from 'react'
 import { MAX_WAVE, abilityMeta, type AbilityKey, type Game, type WaveState } from '../game/engine'
-import type { ATLAS } from '../game/render'
-import { AtlasIcon, DashIcon, pad } from './shared'
-
-export const ABILITY_ORDER: AbilityKey[] = ['dash', 'seal', 'volley', 'mirror', 'glyph']
-
-const ICONS: Partial<Record<AbilityKey, keyof typeof ATLAS>> = {
-  seal: 'splat',
-  volley: 'candelabra',
-  mirror: 'mirrorA',
-  glyph: 'skull',
-}
+import { ABILITY_ORDER, RiteIcon, pad } from './shared'
 
 /** A snapshot of the game for the HUD, refreshed ~15 times a second. */
 export type HudState = {
@@ -84,7 +74,6 @@ export function Hud({ hud, flashing, showPauseButton, onPause, onDash }: Props) 
               const meta = abilityMeta[key]
               const frac = hud.cooldownFrac[key]
               const isReady = frac <= 0
-              const icon = ICONS[key]
               return (
                 <button
                   key={key}
@@ -96,9 +85,11 @@ export function Hud({ hud, flashing, showPauseButton, onPause, onDash }: Props) 
                     event.preventDefault()
                     if (key === 'dash') onDash()
                   }}
-                  title={`${meta.label}: ${meta.caption}`}
+                  title={`${meta.label}: ${meta.does} ${meta.when}`}
                 >
-                  <span className="ability-icon">{icon ? <AtlasIcon name={icon} /> : <DashIcon />}</span>
+                  <span className="ability-icon">
+                    <RiteIcon rite={key} />
+                  </span>
                   <span className="ability-fill" style={{ transform: `scaleY(${frac})` }} />
                   {!isReady && <span className="ability-timer">{Math.ceil(hud.cooldowns[key])}</span>}
                   {key === 'dash' && <span className="ability-key">⇧</span>}

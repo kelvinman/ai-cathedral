@@ -183,19 +183,37 @@ export function playSfx(name: Sfx) {
 }
 
 // ---------- Music ----------
-// A slow gothic organ progression in D minor (i – VI – iv – V), scheduled a little ahead
-// of time. Intensity adds layers: 0 silent, 0.25 title (organ and bell), 0.5 normal
-// sermons (adds bass and choir), 1 boss sermons (adds arpeggio and drums), 2 the
-// final sermon (everything, louder and darker).
+// A slow gothic organ piece in D minor, eight bars long, scheduled a little ahead of time.
+// Every note starts a touch early and rings on into the next bar, so the bars overlap
+// and there is never a gap at a bar line or when the loop comes round. Intensity adds
+// layers: 0 silent, 0.25 title (organ and bell), 0.5 normal sermons (adds bass and the
+// choir melody), 1 boss sermons (adds arpeggio and drums), 2 the final sermon
+// (everything, louder and darker).
 
 const BPM = 72
 const BEAT = 60 / BPM
-// Chord tones per bar, as MIDI note numbers.
+const BAR = BEAT * 4
+// i – VI – iv – V – i – III – VII – V, as MIDI note numbers.
 const PROGRESSION = [
   [50, 53, 57, 62], // D minor
   [46, 50, 53, 58], // B♭ major
   [43, 46, 50, 55], // G minor
   [45, 49, 52, 57], // A major
+  [50, 53, 57, 62], // D minor
+  [45, 48, 53, 57], // F major
+  [43, 48, 52, 55], // C major
+  [45, 49, 52, 57], // A major
+]
+// The choir's tune: two notes per bar, each a half-bar long.
+const MELODY = [
+  [62, 65],
+  [65, 62],
+  [62, 58],
+  [61, 64],
+  [62, 69],
+  [65, 69],
+  [67, 64],
+  [61, 57],
 ]
 const midi = (note: number) => 440 * 2 ** ((note - 69) / 12)
 
@@ -215,7 +233,15 @@ export function setMusicIntensity(value: number) {
   updateMusicLevel()
 }
 
-function voice(type: OscillatorType, frequency: number, start: number, length: number, volume: number, attack = 0.04, cutoff = 2400) {
+/** One note: swell in over `attack`, hold for `length`, then ring out over `release`. */
+function voice(
+  type: OscillatorType,
+  frequency: number,
+  start: number,
+  length: number,
+  volume: number,
+  { attack = 0.04, release = 0.3, cutoff = 2400 } = {},
+) {
   if (!ctx || !musicBus) return
   const osc = ctx.createOscillator()
   const filter = ctx.createBiquadFilter()
@@ -226,49 +252,53 @@ function voice(type: OscillatorType, frequency: number, start: number, length: n
   filter.frequency.value = cutoff
   gain.gain.setValueAtTime(0.0001, start)
   gain.gain.linearRampToValueAtTime(volume, start + attack)
-  gain.gain.setValueAtTime(volume, start + Math.max(attack, length - 0.25))
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + length)
+  gain.gain.setValueAtTime(volume, start + Math.max(attack, length))
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + length + release)
   osc.connect(filter).connect(gain).connect(musicBus)
   osc.start(start)
-  osc.stop(start + length + 0.05)
+  osc.stop(start + length + release + 0.05)
   return osc
 }
 
 function scheduleBar(start: number) {
+  const step = bar % PROGRESSION.length
+  bar += 1
   if (!ctx || !musicBus || intensity <= 0) return
-  const chord = PROGRESSION[bar % PROGRESSION.length]
-  const length = BEAT * 4
+  const chord = PROGRESSION[step]
   const dark = intensity >= 2
 
-  // Organ pad: every chord tone, a square through a soft filter plus a fifth above.
+  // Organ pad: every chord tone plus its octave, overlapping into the next bar.
   for (const note of chord) {
-    voice('square', midi(note), start, length + 0.2, 0.018, 0.35, dark ? 1200 : 1700)
-    voice('triangle', midi(note + 12), start, length + 0.2, 0.012, 0.5)
+    voice('square', midi(note), start - 0.08, BAR, 0.017, { attack: 0.2, release: 1.1, cutoff: dark ? 1200 : 1700 })
+    voice('triangle', midi(note + 12), start - 0.08, BAR, 0.011, { attack: 0.3, release: 1.1 })
   }
-  // Tolling bell on the first bar of each phrase.
-  if (bar % 4 === 0) voice('triangle', midi(chord[3] + 24), start, 2.4, 0.03, 0.005)
+  // A tolling bell at the top of the piece.
+  if (step === 0) voice('triangle', midi(chord[3] + 24), start, 0.1, 0.03, { attack: 0.005, release: 2.4 })
 
   if (intensity >= 0.5) {
     // Bass on beats one and three.
-    voice('triangle', midi(chord[0] - 12), start, BEAT * 1.8, 0.07, 0.02, 600)
-    voice('triangle', midi(chord[0] - 12), start + BEAT * 2, BEAT * 1.8, 0.06, 0.02, 600)
-    // Wordless choir: a sine with vibrato, holding the top note across the bar.
-    const choir = voice('sine', midi(chord[3] + 12), start, length, 0.035, 0.6)
-    if (choir) {
+    for (const beat of [0, 2]) {
+      voice('triangle', midi(chord[0] - 12), start + beat * BEAT, BEAT * 1.7, 0.065, { release: 0.5, cutoff: 600 })
+    }
+    // Wordless choir singing the melody: a sine with gentle vibrato.
+    MELODY[step].forEach((note, half) => {
+      const at = start + half * BEAT * 2
+      const choir = voice('sine', midi(note), at - 0.05, BEAT * 2, 0.04, { attack: 0.25, release: 0.7 })
+      if (!choir || !ctx) return
       const lfo = ctx.createOscillator()
       const depth = ctx.createGain()
       lfo.frequency.value = 5
       depth.gain.value = 4
       lfo.connect(depth).connect(choir.frequency)
-      lfo.start(start)
-      lfo.stop(start + length)
-    }
+      lfo.start(at)
+      lfo.stop(at + BEAT * 2 + 0.8)
+    })
   }
   if (intensity >= 1) {
     // Arpeggio in eighth notes, and a heartbeat drum.
-    for (let step = 0; step < 8; step += 1) {
-      const note = chord[[0, 1, 2, 3, 2, 1, 2, 3][step]] + 12
-      voice('square', midi(note), start + step * (BEAT / 2), BEAT / 2.2, dark ? 0.02 : 0.014, 0.005, 2200)
+    for (let index = 0; index < 8; index += 1) {
+      const note = chord[[0, 1, 2, 3, 2, 1, 2, 3][index]] + 12
+      voice('square', midi(note), start + index * (BEAT / 2), BEAT / 2.4, dark ? 0.02 : 0.014, { attack: 0.005, release: 0.12, cutoff: 2200 })
     }
     for (const beat of dark ? [0, 1, 2, 3] : [0, 2]) {
       const at = start + beat * BEAT
@@ -283,7 +313,6 @@ function scheduleBar(start: number) {
       osc.stop(at + 0.32)
     }
   }
-  bar += 1
 }
 
 /** Start the music scheduler (safe to call repeatedly; needs unlockAudio first). */
@@ -292,10 +321,11 @@ export function startMusic() {
   nextBarTime = ctx.currentTime + 0.1
   musicTimer = window.setInterval(() => {
     if (!ctx) return
-    // Keep about one bar scheduled ahead.
-    while (nextBarTime < ctx.currentTime + BEAT * 4 + 0.2) {
+    // Keep two bars scheduled ahead, so a busy or background tab never runs dry.
+    if (nextBarTime < ctx.currentTime) nextBarTime = ctx.currentTime + 0.1
+    while (nextBarTime < ctx.currentTime + BAR * 2) {
       scheduleBar(nextBarTime)
-      nextBarTime += BEAT * 4
+      nextBarTime += BAR
     }
   }, 250)
 }

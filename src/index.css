@@ -353,7 +353,11 @@
   display: grid;
   place-items: center;
   opacity: 0.35;
-  transform: scale(0.8);
+}
+
+.ability-icon .rite-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .ability.is-ready .ability-icon {
@@ -389,22 +393,103 @@
   text-shadow: var(--outline);
 }
 
-.atlas-icon {
+.rite-icon {
   display: block;
-  background-image: url('./assets/gothic-sprites.png');
-  background-repeat: no-repeat;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: 0 0 / 100% 100% no-repeat;
   image-rendering: pixelated;
 }
 
-.dash-icon {
-  width: 30px;
-  height: 30px;
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 3;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-  shape-rendering: crispEdges;
+.rite-dash {
+  background-image: url('./assets/ui/rite-dash.png');
+}
+
+.rite-seal {
+  background-image: url('./assets/ui/rite-seal.png');
+}
+
+.rite-volley {
+  background-image: url('./assets/ui/rite-volley.png');
+}
+
+.rite-mirror {
+  background-image: url('./assets/ui/rite-mirror.png');
+}
+
+.rite-glyph {
+  background-image: url('./assets/ui/rite-glyph.png');
+}
+
+/* Rites with what they do, on the Controls page and in the first-cast tip. */
+.rites {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.rites li,
+.rite-tip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rites li {
+  padding: 6px 10px;
+  background: var(--stone0);
+  box-shadow: var(--inset);
+}
+
+.rites div,
+.rite-tip > div {
+  display: grid;
+  gap: 1px;
+}
+
+.rites strong,
+.rite-tip strong {
+  font-family: var(--label);
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: uppercase;
+  color: var(--cream);
+}
+
+.rites span,
+.rite-tip span {
+  font-family: var(--pixel);
+  font-size: 18px;
+  line-height: 1.05;
+  color: var(--stone4);
+}
+
+.rites small,
+.rite-tip small {
+  font-family: var(--pixel);
+  font-size: 16px;
+  color: var(--gold1);
+}
+
+/* First-cast tip: under the HUD corner, then it fades. */
+.rite-tip {
+  --px: 2px;
+  position: absolute;
+  top: 136px;
+  left: max(14px, env(safe-area-inset-left));
+  width: min(340px, calc(100% - 28px));
+  justify-items: start;
+  padding: 0 4px;
+  text-align: left;
+  pointer-events: none;
+  animation:
+    drop 260ms steps(4),
+    fade-late 5.5s steps(11) forwards;
 }
 
 /* A full-width band, like an old console "STAGE 1" card, so the text never sits on the scene. */
@@ -723,8 +808,12 @@
   }
 }
 
+.controls-panel {
+  width: min(560px, 100%);
+}
+
 .controls-panel .controls {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .controls-note {

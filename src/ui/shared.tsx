@@ -1,5 +1,4 @@
-import { ENEMY_NAMES, MAX_WAVE, isEliteWave } from '../game/engine'
-import { ATLAS } from '../game/render'
+import { ENEMY_NAMES, MAX_WAVE, abilityMeta, isEliteWave, type AbilityKey } from '../game/engine'
 
 export const pad = (value: number) => String(value).padStart(2, '0')
 
@@ -20,28 +19,46 @@ export function withArticle(name: string) {
   return `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
 }
 
-export function AtlasIcon({ name, size = 34 }: { name: keyof typeof ATLAS; size?: number }) {
-  const [x, y, w, h] = ATLAS[name]
-  const scale = size / Math.max(w, h)
+export const ABILITY_ORDER: AbilityKey[] = ['dash', 'seal', 'volley', 'mirror', 'glyph']
+
+/** Pixel icon for a rite (or the dash), drawn to match its effect in the arena. */
+export function RiteIcon({ rite }: { rite: AbilityKey }) {
+  return <span className={`rite-icon rite-${rite}`} aria-hidden="true" />
+}
+
+/** Each rite with what it does and what sets it off: for the Controls page. */
+export function RitesList() {
   return (
-    <span
-      className="atlas-icon"
-      aria-hidden="true"
-      style={{
-        width: w * scale,
-        height: h * scale,
-        backgroundPosition: `-${x * scale}px -${y * scale}px`,
-        backgroundSize: `${160 * scale}px ${128 * scale}px`,
-      }}
-    />
+    <ul className="rites">
+      {ABILITY_ORDER.map((key) => {
+        const meta = abilityMeta[key]
+        return (
+          <li key={key}>
+            <RiteIcon rite={key} />
+            <div>
+              <strong>{meta.label}</strong>
+              <span>{meta.does}</span>
+              <small>{meta.when}</small>
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
-export function DashIcon() {
+/** Shown the first time each rite casts itself, so players learn what it was. */
+export function RiteTip({ rite }: { rite: AbilityKey }) {
+  const meta = abilityMeta[rite]
   return (
-    <svg className="dash-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 6l6 6-6 6M12 6l6 6-6 6" />
-    </svg>
+    <div className="panel rite-tip" key={rite} role="status">
+      <RiteIcon rite={rite} />
+      <div>
+        <strong>{meta.label}</strong>
+        <span>{meta.does}</span>
+        <small>{meta.when}</small>
+      </div>
+    </div>
   )
 }
 

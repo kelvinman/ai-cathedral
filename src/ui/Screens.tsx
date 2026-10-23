@@ -1,5 +1,5 @@
 import { CURSE_RULES, ENEMY_NAMES, type Curse, type Upgrade, type WaveState } from '../game/engine'
-import { ControlsList, pad, sermonLine, withArticle } from './shared'
+import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
 export function TitleScreen({ ready, best, onStart }: { ready: boolean; best: number; onStart: () => void }) {
   return (
@@ -108,10 +108,12 @@ export function MenuPanel({
 
 export function ControlsPage({ onBack }: { onBack: () => void }) {
   return (
-    <div className="panel small-panel controls-panel">
+    <div className="panel controls-panel">
       <span className="label accent">Paused</span>
       <h2>Controls</h2>
       <ControlsList />
+      <span className="label">Rites</span>
+      <RitesList />
       <button type="button" tabIndex={-1} className="secondary is-selected" onClick={onBack}>
         Back <kbd>Esc</kbd>
       </button>

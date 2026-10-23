@@ -323,14 +323,45 @@ export const FINAL_TITLE = 'The Blood Model'
 
 export const abilityMeta: Record<
   AbilityKey,
-  { label: string; key: string; caption: string; color: string }
+  /** `does` says what it does; `when` says what makes it go off. */
+  { label: string; key: string; does: string; when: string; color: string }
 > = {
-  dash: { label: 'Latent Step', key: 'Shift', caption: 'Dash through followers', color: '#cfd8ff' },
+  dash: {
+    label: 'Latent Step',
+    key: 'Shift',
+    does: 'Dash through followers, untouchable for a moment.',
+    when: 'Press Shift.',
+    color: '#cfd8ff',
+  },
   // Rites have no key: they cast themselves (see autoRites).
-  seal: { label: 'Rate Limit', key: '', caption: 'Throttles and burns followers', color: '#d6293b' },
-  volley: { label: 'Prompt Volley', key: '', caption: 'Ring of token bolts', color: '#f2d38b' },
-  mirror: { label: 'Alignment Mirror', key: '', caption: 'Reflect all contact', color: '#b9a3ff' },
-  glyph: { label: 'CAPTCHA Glyph', key: '', caption: 'Stops whatever steps on it', color: '#9d6bff' },
+  seal: {
+    label: 'Rate Limit',
+    key: '',
+    does: 'A blood seal on the floor that slows and burns followers.',
+    when: 'Casts when two or more crowd you.',
+    color: '#d6293b',
+  },
+  volley: {
+    label: 'Prompt Volley',
+    key: '',
+    does: 'Fires a ring of token bolts in every direction.',
+    when: 'Casts when three or more close in.',
+    color: '#f2d38b',
+  },
+  mirror: {
+    label: 'Alignment Mirror',
+    key: '',
+    does: 'A shield that blocks hits and blood, and hurts whatever touches it.',
+    when: 'Casts when a follower is about to hit you.',
+    color: '#b9a3ff',
+  },
+  glyph: {
+    label: 'CAPTCHA Glyph',
+    key: '',
+    does: 'A trap at your feet that stops the followers who step on it.',
+    when: 'Casts when one walks toward you.',
+    color: '#9d6bff',
+  },
 }
 
 export const upgrades: Upgrade[] = [

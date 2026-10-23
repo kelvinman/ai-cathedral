@@ -30,7 +30,7 @@ import {
   type MenuItem,
   type RunSummary,
 } from './ui/Screens'
-import { ControlsList, pad } from './ui/shared'
+import { ControlsList, RiteTip, pad } from './ui/shared'
 import { readStorage, writeStorage } from './ui/storage'
 
 const STEP = 1 / 120
@@ -80,6 +80,9 @@ export default function App() {
   const [hud, setHud] = useState<HudState>(() => readHud(gameRef.current))
   const [curse, setCurse] = useState<Curse | null>(null)
   const [flashing, setFlashing] = useState<Set<AbilityKey>>(new Set())
+  // The first time each rite casts itself (ever), a tip explains what it did.
+  const [riteTip, setRiteTip] = useState<AbilityKey | null>(null)
+  const seenRitesRef = useRef<Set<string>>(new Set(JSON.parse(readStorage('abc-seen-rites') ?? '[]') as string[]))
   const [offers, setOffers] = useState<Upgrade[]>([])
   const [levels, setLevels] = useState<Record<string, number>>({})
   const [best, setBest] = useState(() => Number(readStorage('abc-best') ?? 0))
@@ -290,11 +293,18 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [controlsCard, dismissControlsCard, phase])
 
-  // Music swells on boss sermons and goes quiet on menus.
+  useEffect(() => {
+    if (!riteTip) return
+    const timer = window.setTimeout(() => setRiteTip(null), 5500)
+    return () => window.clearTimeout(timer)
+  }, [riteTip])
+
+  // Music swells on boss sermons and drops to the soft organ on menus. It never stops,
+  // so the upgrade screen between sermons doesn't leave a silent gap.
   useEffect(() => {
     if (phase === 'playing') setMusicIntensity(hud.wave >= MAX_WAVE ? 2 : isEliteWave(hud.wave) ? 1 : 0.5)
-    else if (phase === 'title') setMusicIntensity(0.25)
-    else setMusicIntensity(0)
+    else if (phase === 'upgrade' || phase === 'won') setMusicIntensity(0.5)
+    else setMusicIntensity(0.25)
   }, [phase, hud.wave])
 
   // Game loop.
@@ -370,6 +380,12 @@ export default function App() {
         if (RITES.has(sound)) {
           flashTimers.set(sound as AbilityKey, now + 450)
           flashChanged = true
+          // Held back while the first-run controls card is up; it'll show on the next cast.
+          if (!seenRitesRef.current.has(sound) && !controlsCardRef.current) {
+            seenRitesRef.current.add(sound)
+            writeStorage('abc-seen-rites', JSON.stringify([...seenRitesRef.current]))
+            setRiteTip(sound as AbilityKey)
+          }
         }
       }
       game.events.length = 0
@@ -497,6 +513,8 @@ export default function App() {
             <ControlsList />
           </div>
         )}
+
+        {playing && riteTip && <RiteTip rite={riteTip} />}
 
         {touch && playing && <p className="rotate-hint">Turn your phone sideways for a bigger arena</p>}
         {touch && playing && (

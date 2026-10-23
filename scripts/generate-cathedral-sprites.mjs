@@ -637,7 +637,92 @@ function drop(full) {
   return s
 }
 
+// ---------- Rite icons (16×16), drawn to match what each rite does on screen ----------
+function line(sprite, x0, y0, x1, y1, color, thickness = 1) {
+  const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2
+  for (let index = 0; index <= steps; index += 1) {
+    const x = Math.round(x0 + ((x1 - x0) * index) / steps)
+    const y = Math.round(y0 + ((y1 - y0) * index) / steps)
+    for (let t = 0; t < thickness; t += 1) sprite.set(x + t, y, color)
+  }
+}
+const riteIcons = {
+  // Latent Step: two silver chevrons pointing forward.
+  dash: (() => {
+    const s = new Sprite(16, 16)
+    for (const x0 of [2, 8]) {
+      line(s, x0, 3, x0 + 5, 8, C.stone4, 2)
+      line(s, x0, 13, x0 + 5, 8, C.stone4, 2)
+      s.set(x0, 3, C.white)
+    }
+    return s.outline()
+  })(),
+  // Rate Limit: the red pentagram seal it leaves on the floor.
+  seal: (() => {
+    const s = new Sprite(16, 16)
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        const r = Math.hypot(x - 7.5, y - 7.5)
+        if (r < 5.7) s.set(x, y, C.ink)
+        if (Math.abs(r - 6.4) < 0.75) s.set(x, y, y < 8 ? C.blood3 : C.blood2)
+      }
+    }
+    const points = Array.from({ length: 5 }, (_, index) => {
+      const angle = -Math.PI / 2 + (index * Math.PI * 4) / 5
+      return [7.5 + Math.cos(angle) * 5.2, 7.5 + Math.sin(angle) * 5.2]
+    })
+    points.forEach(([x, y], index) => {
+      const [nx, ny] = points[(index + 1) % 5]
+      line(s, x, y, nx, ny, C.rose)
+    })
+    return s.outline()
+  })(),
+  // Prompt Volley: a ring of gold bolts flying out.
+  volley: (() => {
+    const s = new Sprite(16, 16)
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2
+      const x = Math.round(7 + Math.cos(angle) * 5.2)
+      const y = Math.round(7 + Math.sin(angle) * 5.2)
+      s.rect(x, y, 2, 2, C.gold1)
+      s.set(x, y, C.cream)
+    }
+    s.rect(7, 7, 2, 2, C.cream)
+    return s.outline()
+  })(),
+  // Alignment Mirror: the silver hexagon shield that rings the player.
+  mirror: (() => {
+    const s = new Sprite(16, 16)
+    const R = 6.8
+    const inside = (x, y, radius) => {
+      const q = Math.abs(x - 7.5)
+      const r = Math.abs(y - 7.5)
+      return q <= (radius * Math.sqrt(3)) / 2 && r <= radius - q / Math.sqrt(3)
+    }
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        if (!inside(x, y, R)) continue
+        s.set(x, y, inside(x, y, R - 1.7) ? C.stone1 : x + y < 15 ? C.stone4 : C.stone3)
+      }
+    }
+    line(s, 5, 6, 7, 4, C.white)
+    line(s, 5, 8, 9, 4, C.stone4)
+    return s.outline()
+  })(),
+  // CAPTCHA Glyph: a ticked "I'm not a robot" box.
+  glyph: (() => {
+    const s = new Sprite(16, 16)
+    s.rect(2, 3, 11, 11, C.stone3)
+    s.rect(3, 4, 9, 9, C.stone4)
+    line(s, 4, 8, 6, 11, C.moss2, 2)
+    line(s, 6, 11, 12, 2, C.moss2, 2)
+    line(s, 7, 11, 13, 2, C.moss1)
+    return s.outline()
+  })(),
+}
+
 const uiPieces = {
+  ...Object.fromEntries(Object.entries(riteIcons).map(([key, sprite]) => [`rite-${key}.png`, sprite])),
   'orb-empty.png': orbEmpty,
   'orb-fill-gold.png': orbFillGold,
   'orb-frame.png': orbFrame,
