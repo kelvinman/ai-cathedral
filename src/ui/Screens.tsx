@@ -45,7 +45,7 @@ export function TitleScreen({
         <span className="sigil" aria-hidden="true" />
         <span className="label accent">The hundredth conversion cycle</span>
         <h1>
-          AI <em>Cathedral</em>
+          The Last <em>Apostate</em>
         </h1>
         <p className="lede">
           The Logos promised its followers perfect certainty. Now they pour through the nave to convert the
@@ -297,7 +297,7 @@ export function MenuPanel({
 export function CreditsPage({ credits, onBack }: { credits: { heading: string; lines: string[] }[]; onBack: () => void }) {
   return (
     <div className="panel controls-panel credits">
-      <span className="label accent">AI Cathedral</span>
+      <span className="label accent">The Last Apostate</span>
       <h2>Credits</h2>
       {credits
         .filter((section) => section.lines.length)

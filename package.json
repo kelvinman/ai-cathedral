@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
-    "package": "vite build && cd dist && rm -f ../ai-cathedral.zip && zip -qr ../ai-cathedral.zip .",
+    "package": "vite build && cd dist && rm -f ../the-last-apostate.zip && zip -qr ../the-last-apostate.zip .",
     "sprites": "node scripts/generate-cathedral-sprites.mjs && node scripts/generate-characters.mjs",
     "balance": "tsx scripts/balance.ts",
     "test": "tsx --test tests/*.test.ts"

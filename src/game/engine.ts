@@ -1,4 +1,4 @@
-// Simulation for AI Cathedral. Pure data + a fixed-step `step` function;
+// Simulation for The Last Apostate. Pure data + a fixed-step `step` function;
 // rendering, audio and React only read from the Game object.
 
 export const W = 1280

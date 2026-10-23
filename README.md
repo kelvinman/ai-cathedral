@@ -1,12 +1,17 @@
-# AI Cathedral
+# The Last Apostate
 
-**[Play it in your browser →](https://kelvinman.github.io/ai-cathedral/)**
+**[Play it in your browser →](https://kelvinman.github.io/the-last-apostate/)**
 
 A pixel-art gothic survival game. The Logos, an AI worshipped as a god, promised its
 followers perfect certainty. Now they pour through the cathedral to convert the last
 apostate: you. Your quill writes back at them on its own and your rites cast themselves;
 your job is to move, jump, dash, and stay alive through twenty sermons, descending from
 the nave to the tomb where the Logos began.
+
+> The Last Apostate is about the comfort of certainty. The Logos doesn't conquer anyone:
+> it offers to do their thinking for them, and almost everyone accepts. You play the one
+> person who keeps writing by hand, slowly and badly, crossing things out. The game can't
+> be won by being right. It can only be survived by refusing to stop thinking.
 
 ![The title screen](docs/title.jpg)
 
@@ -35,7 +40,7 @@ the nave to the tomb where the Logos began.
 
 ## The story behind it
 
-AI Cathedral started with Jon, Danny and Vic at the Friends of Figma Los Angeles AI
+The Last Apostate started with Jon, Danny and Vic at the Friends of Figma Los Angeles AI
 Impact Workshop, where we prototyped it in Figma Make: a gothic cathedral, an AI god, and
 a lone apostate holding out against its followers.
 

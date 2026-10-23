@@ -1,4 +1,4 @@
-// Who made AI Cathedral, for the Credits page (Settings → Save and credits → Credits).
+// Who made The Last Apostate, for the Credits page (Settings → Save and credits → Credits).
 // Fill in the names: empty sections are simply left out.
 
 export const CREDITS: { heading: string; lines: string[] }[] = [

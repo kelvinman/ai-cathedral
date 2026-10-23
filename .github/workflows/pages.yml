@@ -1,5 +1,5 @@
 # Builds the game and publishes it to GitHub Pages on every push to main:
-# https://kelvinman.github.io/ai-cathedral/
+# https://kelvinman.github.io/the-last-apostate/
 name: Deploy to GitHub Pages
 
 on:

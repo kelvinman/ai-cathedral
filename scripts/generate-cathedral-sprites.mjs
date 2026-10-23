@@ -1363,6 +1363,7 @@ const FONT = {
   M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
   N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
   O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
   R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
   S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
   T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
@@ -1416,8 +1417,8 @@ for (let x = 0; x < CARD_W; x += 1) {
   card.set(x, 99, C.gold0)
   card.set(x, 136, C.gold0)
 }
-const top = 'AI'
-const bottom = 'CATHEDRAL'
+const top = 'THE LAST'
+const bottom = 'APOSTATE'
 const titleWidth = textWidth(`${top} ${bottom}`, 2)
 text(card, top, (CARD_W - titleWidth) / 2, 104, 2, C.cream, C.blood0)
 text(card, bottom, (CARD_W - titleWidth) / 2 + textWidth(`${top} `, 2) + 2, 104, 2, C.blood3, C.blood0)

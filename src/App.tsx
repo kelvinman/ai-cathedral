@@ -908,7 +908,7 @@ export default function App() {
       className={`game ${playing ? 'is-playing' : ''} ${device === 'pad' ? 'is-pad' : ''} ${settings.largeText ? 'is-large-text' : ''} ${settings.calm ? 'is-calm' : ''} ${usingMouse ? 'is-mouse' : ''}`}
     >
       <div className="stage" ref={stageRef}>
-        <canvas ref={canvasRef} aria-label="AI Cathedral arena" onContextMenu={(event) => event.preventDefault()} />
+        <canvas ref={canvasRef} aria-label="The Last Apostate: the arena" onContextMenu={(event) => event.preventDefault()} />
 
         {phase !== 'title' && (
           <Hud
@@ -1021,7 +1021,7 @@ export default function App() {
             )}
             {pauseView === 'settings' && (
               <MenuPanel
-                kicker={optionsOpen ? 'AI Cathedral' : 'Paused'}
+                kicker={optionsOpen ? 'The Last Apostate' : 'Paused'}
                 title="Settings"
                 items={settingsItems}
                 index={pauseIndex}
