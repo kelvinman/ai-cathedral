@@ -1637,6 +1637,27 @@ export function render(
 
   // Vignette covers whatever part of the scene the window shows.
   const visible = [-view.offsetX / view.scale, -view.offsetY / view.scale, view.width / view.scale, view.height / view.scale] as const
+
+  // A phone held upright shows only part of the arena: followers out of view are marked
+  // at the edge they'll come from, at their height, in the danger colour.
+  const left = visible[0]
+  const right = visible[0] + visible[2]
+  if (left > 1 || right < W - 1) {
+    const pulse = calm || Math.floor(time * 4) % 2 ? 1 : 0.6
+    ctx.fillStyle = dangerColors.solid
+    for (const enemy of g.enemies) {
+      const side = enemy.x < left ? -1 : enemy.x > right ? 1 : 0
+      if (!side) continue
+      const edge = side < 0 ? left + PX * 3 : right - PX * 3
+      const y = snap(Math.max(PX * 6, Math.min(H - PX * 6, enemy.y - enemy.h / 2)))
+      ctx.globalAlpha = pulse
+      for (let row = -3; row <= 3; row += 1) {
+        const reach = 4 - Math.abs(row)
+        ctx.fillRect(snap(edge) - (side < 0 ? 0 : reach * PX), y + row * PX, reach * PX, PX)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
   ctx.drawImage(assets.vignette, ...visible)
   // The low-health pulse follows whoever standing is closest to falling.
   const danger = Math.min(1, ...g.players.filter((p) => !p.down).map((p) => p.hp / p.maxHp))

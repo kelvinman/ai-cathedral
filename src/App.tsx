@@ -46,6 +46,8 @@ import { LESSONS, advanceTutorial, startTutorial, type Device, type Tutorial } f
 import { readStorage, writeStorage } from './ui/storage'
 
 const STEP = 1 / 120
+/** How much of the arena's width a phone held upright shows at once. */
+const PORTRAIT_SPAN = 720
 
 // Move, jump, drop and dash are the only inputs: firing and rites are automatic.
 const RITES = new Set<string>(['seal', 'volley', 'mirror', 'glyph'])
@@ -129,6 +131,7 @@ export default function App() {
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: W, height: H })
   const heldRef = useRef(new Set<string>())
   const touchRef = useRef({ left: false, right: false, down: false, jump: false })
+  const dpadPointerRef = useRef<number | null>(null)
   const inputsRef = useRef<Input[]>([newInput(), newInput()])
   const phaseRef = useRef<Phase>('title')
   // Chosen on the title screen: story or endless, one player or two.
@@ -153,6 +156,9 @@ export default function App() {
   const [newBest, setNewBest] = useState(false)
   const [ready, setReady] = useState(false)
   const [touch, setTouch] = useState(false)
+  const [portrait, setPortrait] = useState(false)
+  /** Which d-pad arrows are lit (u, d, l, r), for the upright touch layout. */
+  const [dpad, setDpad] = useState('')
   const [summary, setSummary] = useState<RunSummary>({ wave: 1, kills: 0, bestCombo: 0, score: 0, by: '', mode: 'story', players: 1 })
   const [muted, setMuted] = useState(() => readStorage('abc-muted') === '1')
   const [settings, setSettings] = useState<Settings>(loadSettings)
@@ -314,10 +320,18 @@ export default function App() {
 
   useEffect(() => {
     const query = window.matchMedia('(pointer: coarse)')
-    const update = () => setTouch(query.matches)
+    const upright = window.matchMedia('(orientation: portrait)')
+    const update = () => {
+      setTouch(query.matches)
+      setPortrait(upright.matches)
+    }
     update()
     query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
+    upright.addEventListener('change', update)
+    return () => {
+      query.removeEventListener('change', update)
+      upright.removeEventListener('change', update)
+    }
   }, [])
 
   const goTo = useCallback((next: Phase) => {
@@ -611,11 +625,24 @@ export default function App() {
       setReady(true)
     })
 
+    // Phones held upright show part of the arena, closer, and follow the player across it.
+    let follow: { span: number } | null = null
+    let cameraX = 0
     const resize = () => {
       const rect = stage.getBoundingClientRect()
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       canvasElement.width = Math.round(rect.width * dpr)
       canvasElement.height = Math.round(rect.height * dpr)
+      if (rect.height > rect.width && window.matchMedia('(pointer: coarse)').matches) {
+        // The arena's floor sits just above the touch controls, and the HUD over the
+        // scenery above the arena.
+        const controls = Math.min(210, rect.height * 0.3)
+        const scale = Math.min(rect.width / PORTRAIT_SPAN, Math.max(0.1, rect.height - controls - 72) / H)
+        follow = { span: Math.min(W, rect.width / scale) }
+        viewRef.current = { scale, dpr, width: rect.width, height: rect.height, offsetX: -cameraX * scale, offsetY: rect.height - controls - H * scale }
+        return
+      }
+      follow = null
       const scale = Math.min(rect.width / W, rect.height / H)
       viewRef.current = {
         scale,
@@ -761,6 +788,16 @@ export default function App() {
         setHud(readHud(game))
       }
 
+      if (follow) {
+        const standing = game.players.filter((p) => !p.down)
+        const watched = standing.length ? standing : game.players
+        const centre = watched.reduce((sum, p) => sum + p.x, 0) / watched.length
+        const target = Math.max(0, Math.min(W - follow.span, centre - follow.span / 2))
+        cameraX += (target - cameraX) * Math.min(1, dt * 6)
+        const view = viewRef.current
+        view.offsetX = (view.width - follow.span * view.scale) / 2 - cameraX * view.scale
+      }
+
       const assets = assetsRef.current
       if (assets) render(ctx, game, assets, viewRef.current)
     }
@@ -788,6 +825,50 @@ export default function App() {
       touchRef.current[key] = false
     },
   })
+
+  // The d-pad held upright reads where the thumb is from its centre, so sliding into a
+  // diagonal jumps while moving. Up jumps, down drops through a ledge.
+  const steerTouch = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const dx = event.clientX - (rect.left + rect.width / 2)
+    const dy = event.clientY - (rect.top + rect.height / 2)
+    const touching = touchRef.current
+    const wasUp = touching.jump
+    const wasDown = touching.down
+    const still = Math.hypot(dx, dy) < rect.width * 0.12
+    // Eight 45° sectors: a direction is held when the thumb is within 67.5° of it.
+    const angle = Math.atan2(dy, dx)
+    const near = (target: number) => !still && Math.abs(Math.atan2(Math.sin(angle - target), Math.cos(angle - target))) < Math.PI * 0.375
+    touching.right = near(0)
+    touching.left = near(Math.PI)
+    touching.down = near(Math.PI / 2)
+    touching.jump = near(-Math.PI / 2)
+    if (touching.jump && !wasUp) press('jump')
+    if (touching.down && !wasDown) press('down')
+    setDpad((touching.jump ? 'u' : '') + (touching.down ? 'd' : '') + (touching.left ? 'l' : '') + (touching.right ? 'r' : ''))
+  }
+  const releaseDpad = (event: ReactPointerEvent) => {
+    if (event.pointerId !== dpadPointerRef.current) return
+    dpadPointerRef.current = null
+    touchRef.current = { left: false, right: false, down: false, jump: false }
+    setDpad('')
+  }
+  const dpadTouch = {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      unlockAudio()
+      markDevice('touch')
+      dpadPointerRef.current = event.pointerId
+      // Keeps the thumb steering when it slides off the pad.
+      event.currentTarget.setPointerCapture(event.pointerId)
+      steerTouch(event)
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerId === dpadPointerRef.current) steerTouch(event)
+    },
+    onPointerUp: releaseDpad,
+    onPointerCancel: releaseDpad,
+  }
 
   const pauseItems: MenuItem[] = [
     { label: 'Resume', key: 'Esc', style: 'primary', run: () => goTo('playing') },
@@ -943,8 +1024,30 @@ export default function App() {
         {/* After the controls card, so CSS can move the line clear of it. */}
         {(playing || phase === 'paused') && line && <SpokenLine key={line.id} line={line} paused={!playing} />}
 
-        {touch && playing && <p className="rotate-hint">Turn your phone sideways for a bigger arena</p>}
-        {touch && playing && (
+        {touch && playing && portrait && (
+          <div className="touch-controls">
+            <div className="touch-dpad" role="group" aria-label="Move, jump and drop" {...dpadTouch}>
+              {(['u', 'l', 'r', 'd'] as const).map((arrow) => (
+                <span key={arrow} className={`touch-button dpad-${arrow} ${dpad.includes(arrow) ? 'is-held' : ''}`} aria-hidden="true">
+                  {{ u: '▲', l: '◀', r: '▶', d: '▼' }[arrow]}
+                </span>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="touch-button is-large is-dash"
+              aria-label="Dash"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                unlockAudio()
+                press('dash')
+              }}
+            >
+              Dash
+            </button>
+          </div>
+        )}
+        {touch && playing && !portrait && (
           <div className="touch-controls">
             <div className="touch-pad">
               <button type="button" className="touch-button" aria-label="Move left" {...holdTouch('left')}>

@@ -1385,26 +1385,67 @@
   border-image-source: url('./assets/ui/button-down.png');
 }
 
-.rotate-hint {
+/* Phones held upright: the arena sits above the controls (the camera leaves the bottom
+   band clear), so there's room for a full d-pad on the left and Dash on its own. */
+.touch-dpad {
   display: none;
 }
 
 @media (orientation: portrait) and (pointer: coarse) {
-  .rotate-hint {
-    position: absolute;
-    top: 22%;
-    left: 50%;
-    display: block;
-    translate: -50% 0;
-    margin: 0;
-    padding: 4px 10px;
-    border: 2px solid var(--ink);
-    background: var(--wood0);
-    font-family: var(--pixel);
-    font-size: 18px;
-    color: var(--stone4);
-    white-space: nowrap;
+  .touch-controls {
+    inset: auto 0 max(16px, env(safe-area-inset-bottom));
+    align-items: center;
+    padding: 0 20px;
+  }
+
+  .touch-dpad {
+    --cell: min(54px, 14vw);
+    display: grid;
+    grid-template: repeat(3, var(--cell)) / repeat(3, var(--cell));
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  .touch-dpad .touch-button {
+    width: var(--cell);
+    height: var(--cell);
     pointer-events: none;
+  }
+
+  .touch-dpad .touch-button.is-held {
+    border-image-source: url('./assets/ui/button-stone-down.png');
+  }
+
+  .dpad-u { grid-area: 1 / 2; }
+  .dpad-l { grid-area: 2 / 1; }
+  .dpad-r { grid-area: 2 / 3; }
+  .dpad-d { grid-area: 3 / 2; }
+
+  .touch-button.is-dash {
+    width: min(96px, 25vw);
+    height: min(96px, 25vw);
+    font-size: 14px;
+  }
+
+  /* The corner fills the width, so the free will moves to the top-right, above pause. */
+  .sermon-title {
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    translate: none;
+    justify-items: end;
+  }
+
+  .score {
+    font-size: 26px;
+  }
+
+  .pause-button {
+    top: calc(max(14px, env(safe-area-inset-top)) + 40px);
+  }
+
+  /* .game for weight over the small-screen rules further down. */
+  .game .spoken {
+    top: calc(max(14px, env(safe-area-inset-top)) + 100px);
   }
 }
 
@@ -1833,7 +1874,7 @@
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 480px) and (orientation: landscape) {
   .touch-pad {
     gap: 6px;
   }
