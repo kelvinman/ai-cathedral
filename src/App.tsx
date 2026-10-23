@@ -24,10 +24,12 @@ import {
 } from './game/engine'
 import { LEDGER, emptyLedger, recordRun, type LedgerEntry, type LedgerState } from './game/lore'
 import { epitaph, makeNarrator, narrate, type Line } from './game/narrator'
-import { loadAssets, render, setShakeEnabled, type Assets, type View } from './game/render'
+import { loadAssets, render, setDangerColor, setReducedFlashing, setShakeEnabled, type Assets, type View } from './game/render'
+import { CREDITS } from './credits'
 import { Hud, SpokenLine, readHud, type HudState } from './ui/Hud'
 import {
   ControlsPage,
+  CreditsPage,
   LedgerScreen,
   MenuPanel,
   ResultsScreen,
@@ -36,9 +38,10 @@ import {
   UpgradeScreen,
   type MenuItem,
   type RunSummary,
+  type TitleItem,
 } from './ui/Screens'
 import { ControlsList, RiteTip, pad } from './ui/shared'
-import { GAME_KEYS, heldKeys, keyAction, keyPlayer, readPads } from './ui/controls'
+import { BINDINGS, DEFAULT_LAYOUTS, GAME_KEYS, getLayouts, heldKeys, keyAction, keyName, keyPlayer, readPads, setLayouts, type Binding, type Layout } from './ui/controls'
 import { LESSONS, advanceTutorial, startTutorial, type Device, type Tutorial } from './ui/tutorial'
 import { readStorage, writeStorage } from './ui/storage'
 
@@ -52,18 +55,50 @@ const ENDLESS_FROM = 10
 /** Best score is kept per mode; endless also remembers its deepest sermon. */
 const bestKey = (mode: Mode) => (mode === 'endless' ? 'abc-best-endless' : 'abc-best')
 
-type PauseView = 'menu' | 'controls' | 'settings'
-type Settings = { music: number; effects: number; shake: boolean }
+type PauseView = 'menu' | 'controls' | 'settings' | 'keys' | 'extras' | 'credits'
+type Settings = { music: number; effects: number; shake: boolean; calm: boolean; largeText: boolean; danger: 'red' | 'yellow' }
 
 function loadSettings(): Settings {
   const prefersCalm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const defaults: Settings = { music: 0.6, effects: 0.8, shake: !prefersCalm, calm: prefersCalm, largeText: false, danger: 'red' }
   try {
-    const saved = JSON.parse(readStorage('abc-settings') ?? '{}') as Partial<Settings>
-    return { music: saved.music ?? 0.6, effects: saved.effects ?? 0.8, shake: saved.shake ?? !prefersCalm }
+    return { ...defaults, ...(JSON.parse(readStorage('abc-settings') ?? '{}') as Partial<Settings>) }
   } catch {
-    return { music: 0.6, effects: 0.8, shake: !prefersCalm }
+    return defaults
   }
 }
+
+// Rebound keys, kept between visits.
+function loadKeys(): Layout[] {
+  try {
+    const saved = JSON.parse(readStorage('abc-keys') ?? 'null') as Layout[] | null
+    return saved?.length === 2 ? saved : DEFAULT_LAYOUTS
+  } catch {
+    return DEFAULT_LAYOUTS
+  }
+}
+setLayouts(loadKeys())
+
+/** Every save the game keeps, as one string a player can copy somewhere safe and paste back. */
+function exportSave() {
+  const data: Record<string, string> = {}
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (key?.startsWith('abc-')) data[key] = localStorage.getItem(key) ?? ''
+  }
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))))
+}
+function importSave(code: string) {
+  const data = JSON.parse(decodeURIComponent(escape(atob(code.trim())))) as Record<string, string>
+  for (const [key, value] of Object.entries(data)) if (key.startsWith('abc-')) writeStorage(key, value)
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen()
+  else void document.documentElement.requestFullscreen?.().catch(() => {})
+}
+
+const BINDING_NAMES: Record<Binding, string> = { left: 'Left', right: 'Right', jump: 'Jump', down: 'Drop', dash: 'Dash' }
 
 function loadLedger(): LedgerState {
   try {
@@ -179,6 +214,48 @@ export default function App() {
     },
     [selectPause],
   )
+  // Settings can also be opened from the title screen, over it.
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const optionsOpenRef = useRef(false)
+  const openOptions = useCallback(() => {
+    optionsOpenRef.current = true
+    setOptionsOpen(true)
+    showPauseView('settings')
+  }, [showPauseView])
+  /** Back one page: sub-pages to Settings, Settings to the pause menu (or off the title). */
+  const menuBack = useCallback(() => {
+    const view = pauseViewRef.current
+    if (view === 'credits') return showPauseView('extras')
+    if (view === 'keys' || view === 'extras') return showPauseView('settings')
+    if (optionsOpenRef.current) {
+      optionsOpenRef.current = false
+      setOptionsOpen(false)
+      return
+    }
+    showPauseView('menu')
+  }, [showPauseView])
+
+  // Rebinding: the next key pressed becomes this binding.
+  const [capture, setCapture] = useState<{ player: number; binding: Binding } | null>(null)
+  const captureRef = useRef<{ player: number; binding: Binding } | null>(null)
+  const [layouts, setLayoutsState] = useState<Layout[]>(getLayouts)
+  const saveLayouts = useCallback((next: Layout[]) => {
+    setLayouts(next)
+    setLayoutsState(next)
+    writeStorage('abc-keys', JSON.stringify(next))
+  }, [])
+
+  // The title screen's highlighted row.
+  const [titleItem, setTitleItem] = useState<TitleItem>('story')
+  const titleItemRef = useRef<TitleItem>('story')
+  const titleItemsRef = useRef<TitleItem[]>([])
+  const selectTitle = useCallback((item: TitleItem) => {
+    titleItemRef.current = item
+    setTitleItem(item)
+  }, [])
+
+  // A quick fade from black when a run starts or ends.
+  const [curtain, setCurtain] = useState(0)
 
   // The first story run teaches the basics one hint at a time (see ui/tutorial.ts).
   const tutorialRef = useRef<Tutorial | null>(null)
@@ -205,6 +282,8 @@ export default function App() {
   useEffect(() => {
     setVolumes(muted ? 0 : settings.music, muted ? 0 : settings.effects)
     setShakeEnabled(settings.shake)
+    setReducedFlashing(settings.calm)
+    setDangerColor(settings.danger)
     writeStorage('abc-muted', muted ? '1' : '0')
     writeStorage('abc-settings', JSON.stringify(settings))
   }, [muted, settings])
@@ -234,6 +313,7 @@ export default function App() {
     // Touch screens have one set of controls, so they always play alone.
     const count = window.matchMedia('(pointer: coarse)').matches ? 1 : playersRef.current
     const game = makeGame({ mode: modeRef.current, players: count })
+    setCurtain((value) => value + 1)
     game.phase = 'playing'
     startWave(game)
     gameRef.current = game
@@ -295,6 +375,26 @@ export default function App() {
       const game = gameRef.current
       unlockAudio()
       markDevice(event.fromPad ? 'pad' : 'keys')
+
+      // Rebinding: take this key for the chosen action (Escape cancels).
+      const binding = captureRef.current
+      if (binding && !event.fromPad) {
+        event.preventDefault()
+        captureRef.current = null
+        setCapture(null)
+        if (event.code !== 'Escape') {
+          const next = getLayouts().map((layout) => ({ ...layout }))
+          // A key belongs to one action: take it off anything else first.
+          for (const layout of next) for (const name of BINDINGS) layout[name] = layout[name].filter((code) => code !== event.code)
+          next[binding.player][binding.binding] = [event.code]
+          saveLayouts(next)
+        }
+        return
+      }
+      if (event.code === 'KeyF' && !event.repeat) {
+        toggleFullscreen()
+        return
+      }
       if (GAME_KEYS.has(event.code) && game.phase === 'playing') event.preventDefault()
       if (game.phase === 'upgrade' && ['Space', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
 
@@ -310,25 +410,56 @@ export default function App() {
         }
         return
       }
-      if (game.phase === 'title' && event.code === 'KeyL' && ledgerRef.current.runs > 0) {
+      if (game.phase === 'title' && !optionsOpenRef.current && event.code === 'KeyL' && ledgerRef.current.runs > 0) {
         openLedger()
         return
       }
-      if (game.phase === 'title' && event.code === 'KeyE' && ledgerRef.current.deepest >= ENDLESS_FROM) {
+      // Title menu: ↑ ↓ move between rows, ← → change players, Enter picks.
+      if (game.phase === 'title' && !optionsOpenRef.current) {
+        const items = titleItemsRef.current
+        const at = Math.max(0, items.indexOf(titleItemRef.current))
+        const step = ['ArrowUp', 'KeyW'].includes(event.code) ? -1 : ['ArrowDown', 'KeyS'].includes(event.code) ? 1 : 0
+        if (step) {
+          event.preventDefault()
+          selectTitle(items[(at + step + items.length) % items.length])
+          return
+        }
+        if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(event.code) && titleItemRef.current === 'players') {
+          event.preventDefault()
+          choosePlayers(playersRef.current === 2 ? 1 : 2)
+          return
+        }
+        if ((event.code === 'Enter' || event.code === 'Space') && !event.repeat) {
+          event.preventDefault()
+          const item = titleItemRef.current
+          if (item === 'players') choosePlayers(playersRef.current === 2 ? 1 : 2)
+          else if (item === 'endless') startGame('endless')
+          else if (item === 'ledger') openLedger()
+          else if (item === 'settings') openOptions()
+          else startGame('story')
+          return
+        }
+      }
+      if ((game.phase === 'dead' || game.phase === 'won') && event.code === 'Escape') {
+        goTo('title')
+        return
+      }
+      if (game.phase === 'title' && !optionsOpenRef.current && event.code === 'KeyE' && ledgerRef.current.deepest >= ENDLESS_FROM) {
         startGame('endless')
         return
       }
-      if (game.phase === 'title' && event.code === 'KeyC') {
+      if (game.phase === 'title' && !optionsOpenRef.current && event.code === 'KeyC') {
         choosePlayers(playersRef.current === 2 ? 1 : 2)
         return
       }
 
-      if (game.phase === 'paused') {
+      if (game.phase === 'paused' || (game.phase === 'title' && optionsOpenRef.current)) {
         const view = pauseViewRef.current
-        if (view === 'controls' || (view === 'settings' && event.code === 'Escape')) {
+        const pageOnly = view === 'controls' || view === 'credits'
+        if (pageOnly || (view !== 'menu' && (event.code === 'Escape' || event.code === 'Backspace'))) {
           if (['Escape', 'Enter', 'Space', 'Backspace'].includes(event.code)) {
             event.preventDefault()
-            showPauseView('menu')
+            menuBack()
           }
           return
         }
@@ -401,7 +532,7 @@ export default function App() {
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [markDevice, choosePlayers, closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
+  }, [markDevice, menuBack, openOptions, saveLayouts, selectTitle, choosePlayers, closeLedger, dismissControlsCard, goTo, openLedger, pick, press, select, selectPause, showPauseView, startGame, togglePause, turnTo])
 
   useEffect(() => {
     if (phase === 'paused') showPauseView('menu')
@@ -571,6 +702,7 @@ export default function App() {
           offersOpenedAtRef.current = performance.now()
         }
         if (game.phase === 'dead' || game.phase === 'won') {
+          setCurtain((value) => value + 1)
           setSummary({ wave: game.wave, kills: game.kills, bestCombo: game.bestCombo, score: game.score, by: game.lastHurtBy, mode: game.mode, players: count })
           if (game.mode === 'endless' && game.wave > Number(readStorage('abc-deep-endless') ?? 0)) {
             writeStorage('abc-deep-endless', String(game.wave))
@@ -657,14 +789,90 @@ export default function App() {
       run: () => change({ shake: !settings.shake }),
       adjust: () => change({ shake: !settings.shake }),
     },
-    { label: 'Back', key: 'Esc', style: 'ghost', run: () => showPauseView('menu') },
+    {
+      label: `Flashing: ${settings.calm ? 'reduced' : 'full'}`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ calm: !settings.calm }),
+      adjust: () => change({ calm: !settings.calm }),
+    },
+    {
+      label: `Text: ${settings.largeText ? 'large' : 'normal'}`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ largeText: !settings.largeText }),
+      adjust: () => change({ largeText: !settings.largeText }),
+    },
+    {
+      label: `Danger colour: ${settings.danger}`,
+      key: '',
+      style: 'secondary',
+      run: () => change({ danger: settings.danger === 'red' ? 'yellow' : 'red' }),
+      adjust: () => change({ danger: settings.danger === 'red' ? 'yellow' : 'red' }),
+    },
+    { label: 'Fullscreen', key: 'F', style: 'secondary', run: toggleFullscreen },
+    { label: 'Keys…', key: '', style: 'secondary', run: () => showPauseView('keys') },
+    { label: 'Save and credits…', key: '', style: 'secondary', run: () => showPauseView('extras') },
+    { label: 'Back', key: 'Esc', style: 'ghost', run: menuBack },
   ]
-  menuItemsRef.current = pauseView === 'settings' ? settingsItems : pauseItems
+  const keysItems: MenuItem[] = [
+    ...[0, 1].flatMap((player) =>
+      BINDINGS.map((binding) => ({
+        label:
+          capture?.player === player && capture.binding === binding
+            ? `P${player + 1} ${BINDING_NAMES[binding]} · press a key…`
+            : `P${player + 1} ${BINDING_NAMES[binding]} · ${layouts[player][binding].map(keyName).join(' / ') || 'none'}`,
+        key: '',
+        style: 'secondary',
+        run: () => {
+          captureRef.current = { player, binding }
+          setCapture({ player, binding })
+        },
+      })),
+    ),
+    { label: 'Reset to defaults', key: '', style: 'secondary', run: () => saveLayouts(DEFAULT_LAYOUTS) },
+    { label: 'Back', key: 'Esc', style: 'ghost', run: menuBack },
+  ]
+  const extrasItems: MenuItem[] = [
+    {
+      label: 'Copy save code',
+      key: '',
+      style: 'secondary',
+      run: () => {
+        void navigator.clipboard?.writeText(exportSave()).then(
+          () => window.alert('Save code copied. Paste it somewhere safe; Load save code brings it back.'),
+          () => window.prompt('Copy this save code:', exportSave()),
+        )
+      },
+    },
+    {
+      label: 'Load save code',
+      key: '',
+      style: 'secondary',
+      run: () => {
+        const code = window.prompt('Paste a save code. This replaces the progress in this browser.')
+        if (!code) return
+        try {
+          importSave(code)
+          window.location.reload()
+        } catch {
+          window.alert("That code didn't work. Check it's the whole thing.")
+        }
+      },
+    },
+    { label: 'Credits', key: '', style: 'secondary', run: () => showPauseView('credits') },
+    { label: 'Back', key: 'Esc', style: 'ghost', run: menuBack },
+  ]
+  menuItemsRef.current =
+    pauseView === 'settings' ? settingsItems : pauseView === 'keys' ? keysItems : pauseView === 'extras' ? extrasItems : pauseItems
+  titleItemsRef.current = [...(touch ? [] : ['players' as const]), 'story', ...(endlessOpen ? ['endless' as const] : []), ...(ledger.runs > 0 ? ['ledger' as const] : []), 'settings']
 
   const playing = phase === 'playing'
 
   return (
-    <main className={`game ${playing ? 'is-playing' : ''}`}>
+    <main
+      className={`game ${playing ? 'is-playing' : ''} ${device === 'pad' ? 'is-pad' : ''} ${settings.largeText ? 'is-large-text' : ''} ${settings.calm ? 'is-calm' : ''}`}
+    >
       <div className="stage" ref={stageRef}>
         <canvas ref={canvasRef} aria-label="AI Cathedral arena" onContextMenu={(event) => event.preventDefault()} />
 
@@ -692,7 +900,7 @@ export default function App() {
 
         {playing && controlsCard && !touch && (
           <div className="panel controls-card" aria-live="polite">
-            <ControlsList players={hud.players.length} />
+            <ControlsList players={hud.players.length} pad={device === 'pad'} />
           </div>
         )}
 
@@ -745,6 +953,9 @@ export default function App() {
             deepestEndless={deepestEndless}
             players={players}
             touch={touch}
+            selected={titleItem}
+            onSelect={selectTitle}
+            onSettings={openOptions}
             onStart={startGame}
             onLedger={openLedger}
             onPlayers={choosePlayers}
@@ -752,9 +963,18 @@ export default function App() {
         )}
         {phase === 'title' && ledgerOpen && <LedgerScreen ledger={ledger} index={page} onSelect={turnTo} onBack={closeLedger} />}
 
-        {phase === 'paused' && (
+        {curtain > 0 && <div className="curtain" key={curtain} aria-hidden="true" />}
+
+        {(phase === 'paused' || (phase === 'title' && optionsOpen)) && (
           <div className="overlay">
-            {pauseView === 'controls' && <ControlsPage players={hud.players.length} onBack={() => showPauseView('menu')} />}
+            {pauseView === 'controls' && <ControlsPage players={hud.players.length} pad={device === 'pad'} onBack={menuBack} />}
+            {pauseView === 'keys' && (
+              <MenuPanel kicker="Settings" title="Keys" items={keysItems} index={pauseIndex} onSelect={selectPause} hint="choose · Enter rebind" dense />
+            )}
+            {pauseView === 'extras' && (
+              <MenuPanel kicker="Settings" title="Save and credits" items={extrasItems} index={pauseIndex} onSelect={selectPause} hint="choose · Enter select" />
+            )}
+            {pauseView === 'credits' && <CreditsPage credits={CREDITS} onBack={menuBack} />}
             {pauseView === 'menu' && (
               <MenuPanel
                 kicker={`Sermon ${pad(hud.wave)}`}
@@ -767,12 +987,13 @@ export default function App() {
             )}
             {pauseView === 'settings' && (
               <MenuPanel
-                kicker="Paused"
+                kicker={optionsOpen ? 'AI Cathedral' : 'Paused'}
                 title="Settings"
                 items={settingsItems}
                 index={pauseIndex}
                 onSelect={selectPause}
                 hint="choose · ← → adjust"
+                dense
               />
             )}
           </div>

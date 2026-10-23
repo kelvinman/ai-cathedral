@@ -800,7 +800,7 @@ function drawChapterMood(ctx: CanvasRenderingContext2D, g: Game, assets: Assets,
       // Glitches come more often, and last longer, as the chapter goes on.
       const beat = Math.floor(time * 6)
       const roll = Math.abs(Math.sin(beat * 12.9898) * 43758.5453) % 1
-      if (roll < stage * 0.08) {
+      if (!calm && roll < stage * 0.08) {
         for (let band = 0; band < 2 + stage; band += 1) {
           const y = screen.y + Math.floor((Math.abs(Math.sin((beat + band) * 78.233)) % 1) * screen.h)
           ctx.fillStyle = band % 2 ? 'rgba(228, 59, 68, 0.45)' : 'rgba(198, 245, 232, 0.35)'
@@ -1044,9 +1044,9 @@ function drawGlyph(ctx: CanvasRenderingContext2D, glyph: string, x: number, y: n
  * so red always reads as "dodge this". The player's own shots never use red.
  */
 function dangerRing(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, time: number) {
-  const r = radius + (Math.floor(time * 8) % 2) * PX
+  const r = radius + (calm ? 0 : (Math.floor(time * 8) % 2) * PX)
   const steps = Math.max(10, Math.round(r * 0.9))
-  ctx.fillStyle = '#ff3049'
+  ctx.fillStyle = dangerColors.solid
   for (let index = 0; index < steps; index += 1) {
     const angle = (index / steps) * TAU
     ctx.fillRect(snap(x + Math.cos(angle) * r), snap(y + Math.sin(angle) * r), PX, PX)
@@ -1097,14 +1097,14 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, aren
     const bob = Math.sin(e.phase * 6) * 3
     const frame = Math.floor(time * 6 + e.id) % 3
     const beat = Math.floor(time * 10) + e.id * 7
-    const jump = hash(beat) < 0.12 ? PX * 2 * (hash(beat + 1) < 0.5 ? -1 : 1) : 0
+    const jump = !calm && hash(beat) < 0.12 ? PX * 2 * (hash(beat + 1) < 0.5 ? -1 : 1) : 0
     const flip = flipEnemy(e.facing)
     const x = snap(e.x) + jump
     const feet = snap(e.y - e.h / 2 + bob) + (assets.hand.base[frame].height * PX) / 2
     if (e.flash > 0) {
       drawCharacter(ctx, assets.hand.flash[frame], x, feet, PX, flip, turnSquash)
     } else {
-      const split = PX * (1 + Math.round(hash(beat + 2)))
+      const split = calm ? PX : PX * (1 + Math.round(hash(beat + 2)))
       ctx.globalAlpha = 0.55
       drawCharacter(ctx, assets.hand.red[frame], x - split, feet, PX, flip, turnSquash)
       drawCharacter(ctx, assets.hand.cyan[frame], x + split, feet, PX, flip, turnSquash)
@@ -1124,7 +1124,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, assets: Assets, aren
     const body: FollowerBody = e.title === FINAL_TITLE ? 'final' : e.elite ? 'elite' : (e.kind as 'acolyte' | 'zealot' | 'bishop')
     const frame = followerFrame(e, body)
     const telling = (e.windup > 0 || e.bossCharge > 0) && Math.floor(time * 12) % 2 === 0
-    const sprite = e.flash > 0 || telling ? assets.enemy.flash[body][frame] : assets.enemy.dressed[arena][body][frame]
+    const sprite = !calm && (e.flash > 0 || telling) ? assets.enemy.flash[body][frame] : assets.enemy.dressed[arena][body][frame]
     const flip = flipEnemy(e.facing)
     drawCharacter(ctx, sprite, e.x + shudder + e.flinchDir * flinch * 4, e.y - bob, e.scale, flip, turnSquash / stretch, stretch, tilt)
     if (e.rooted > 0 || e.slow > 0) {
@@ -1156,6 +1156,19 @@ let shakeEnabled = true
 /** Players can turn screen shake off in Settings (it defaults off with reduced motion). */
 export function setShakeEnabled(value: boolean) {
   shakeEnabled = value
+}
+
+/**
+ * Accessibility settings. Reduced flashing drops the white hit flashes, the glitches and
+ * the red hurt flash; the danger colour swaps the red rings round hostile shots for yellow.
+ */
+let calm = false
+let dangerColors = { solid: '#ff3049', pulse: '#e43b44' }
+export function setReducedFlashing(value: boolean) {
+  calm = value
+}
+export function setDangerColor(color: 'red' | 'yellow') {
+  dangerColors = color === 'yellow' ? { solid: '#ffd23f', pulse: '#f5a623' } : { solid: '#ff3049', pulse: '#e43b44' }
 }
 
 export type View = { scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number }
@@ -1431,7 +1444,7 @@ export function render(
         top.fillRect(cx + PX, spit.y - height + PX * 2, PX, PX * 2)
       }
       // A red-hot crack along the floor under it, so it reads as a hazard.
-      glow.fillStyle = Math.floor(time * 8) % 2 ? '#ff3049' : '#e43b44'
+      glow.fillStyle = calm || Math.floor(time * 8) % 2 ? dangerColors.solid : dangerColors.pulse
       glow.fillRect(snap(spit.x - 26), spit.y - PX, 52, PX * 2)
       halo(glow, spit.x, spit.y - 8, 30, '228, 59, 68', 0.45)
       // Dust kicked up behind it.
@@ -1628,7 +1641,7 @@ export function render(
   // The low-health pulse follows whoever standing is closest to falling.
   const danger = Math.min(1, ...g.players.filter((p) => !p.down).map((p) => p.hp / p.maxHp))
   const lowHealth = g.phase === 'playing' && danger < 0.3 ? (0.3 - danger) * 2 * (Math.floor(time * 3) % 2 ? 1 : 0.6) : 0
-  const redness = Math.max(g.hurtFlash * 0.45, lowHealth * 0.6)
+  const redness = Math.max(g.hurtFlash * (calm ? 0.15 : 0.45), lowHealth * (calm ? 0.3 : 0.6))
   if (redness > 0.01) {
     ctx.globalAlpha = Math.min(1, redness)
     ctx.drawImage(assets.redVignette, ...visible)

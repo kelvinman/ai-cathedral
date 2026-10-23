@@ -4,23 +4,59 @@ import type { Action } from '../game/engine'
 // player one keeps WASD and Space with left Shift, and player two takes the arrows with
 // right Shift (or / and . on keyboards without one).
 
-type Layout = Record<'left' | 'right' | 'down' | 'jump' | 'dash', string[]>
-const LAYOUTS: Layout[] = [
+export type Binding = 'left' | 'right' | 'down' | 'jump' | 'dash'
+export const BINDINGS: Binding[] = ['left', 'right', 'jump', 'down', 'dash']
+export type Layout = Record<Binding, string[]>
+export const DEFAULT_LAYOUTS: Layout[] = [
   { left: ['KeyA'], right: ['KeyD'], down: ['KeyS'], jump: ['KeyW', 'Space'], dash: ['ShiftLeft'] },
   { left: ['ArrowLeft'], right: ['ArrowRight'], down: ['ArrowDown'], jump: ['ArrowUp'], dash: ['ShiftRight', 'Slash', 'Period'] },
 ]
-const ALL = Object.fromEntries(
-  (['left', 'right', 'down', 'jump', 'dash'] as const).map((name) => [name, LAYOUTS.flatMap((layout) => layout[name])]),
-) as Layout
 
-const ACTIONS: Record<string, Action> = Object.fromEntries([
-  ...ALL.jump.map((code) => [code, 'jump'] as const),
-  ...ALL.down.map((code) => [code, 'down'] as const),
-  ...ALL.dash.map((code) => [code, 'dash'] as const),
-])
-
+// The live layouts (players can rebind them in Settings), and lookups rebuilt from them.
+let LAYOUTS: Layout[] = DEFAULT_LAYOUTS
+let ALL: Layout = DEFAULT_LAYOUTS[0]
+let ACTIONS: Record<string, Action> = {}
 /** Every key the game itself listens to while playing. */
-export const GAME_KEYS = new Set(Object.values(ALL).flat())
+export let GAME_KEYS = new Set<string>()
+
+export function setLayouts(layouts: Layout[]) {
+  LAYOUTS = layouts
+  ALL = Object.fromEntries(BINDINGS.map((name) => [name, LAYOUTS.flatMap((layout) => layout[name])])) as Layout
+  ACTIONS = Object.fromEntries([
+    ...ALL.jump.map((code) => [code, 'jump'] as const),
+    ...ALL.down.map((code) => [code, 'down'] as const),
+    ...ALL.dash.map((code) => [code, 'dash'] as const),
+  ])
+  GAME_KEYS = new Set(Object.values(ALL).flat())
+}
+setLayouts(DEFAULT_LAYOUTS)
+
+export const getLayouts = () => LAYOUTS
+
+/** A key code as a player would name it: KeyW → W, ArrowUp → ↑, ShiftLeft → L Shift. */
+export function keyName(code: string) {
+  if (code.startsWith('Key')) return code.slice(3)
+  if (code.startsWith('Digit')) return code.slice(5)
+  const names: Record<string, string> = {
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    ShiftLeft: 'L Shift',
+    ShiftRight: 'R Shift',
+    ControlLeft: 'L Ctrl',
+    ControlRight: 'R Ctrl',
+    AltLeft: 'L Alt',
+    AltRight: 'R Alt',
+    Slash: '/',
+    Period: '.',
+    Comma: ',',
+    Semicolon: ';',
+    Space: 'Space',
+    Enter: 'Enter',
+  }
+  return names[code] ?? code
+}
 
 /** The jump, drop or dash a key presses, if any. */
 export const keyAction = (code: string): Action | undefined => ACTIONS[code]

@@ -871,8 +871,71 @@
   border: 0;
 }
 
+/* Long menus (Settings, Keys): shorter rows so they fit. */
+.small-panel.is-dense .stack {
+  gap: 3px;
+}
+
+.small-panel.is-dense .primary,
+.small-panel.is-dense .secondary,
+.small-panel.is-dense .ghost {
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.credits .credit {
+  display: grid;
+  gap: 2px;
+}
+
+.credits .credit p {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 20px;
+  color: var(--stone4);
+}
+
+/* A quick fade from black when a run starts or ends. */
+.curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: #050307;
+  pointer-events: none;
+  animation: curtain 420ms steps(6) forwards;
+}
+
+@keyframes curtain {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* Larger text (Settings): the spoken lines, banners, hints and menus. */
+.game.is-large-text .spoken {
+  font-size: 32px;
+}
+
+.game.is-large-text .lede,
+.game.is-large-text .controls-card.tutorial p,
+.game.is-large-text .card p,
+.game.is-large-text .ledger-page p {
+  font-size: 26px;
+}
+
+.game.is-large-text .label {
+  font-size: 14px;
+}
+
+/* Reduced flashing (Settings): no pulsing combo orb or blinking banners. */
+.game.is-calm .orb.tier-3 {
+  animation: none;
+}
+
 /* Tutorial hints stay put (no fade) until they're done. */
 .controls-card.tutorial {
+  top: 160px;
   width: min(520px, calc(100% - 32px));
   animation: drop 260ms steps(4);
 }
@@ -940,6 +1003,11 @@
   padding: 4px;
   background: var(--stone0);
   box-shadow: var(--inset);
+}
+
+.players-toggle.is-selected {
+  outline: var(--px) solid var(--gold1);
+  outline-offset: var(--px);
 }
 
 .players-toggle .label {
@@ -1488,6 +1556,30 @@
     grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
     height: min(520px, 62vh);
   }
+}
+
+/* On a gamepad, key labels show the pad button they stand for (A, B, the d-pad), and
+   keyboard-only shortcuts (letters) are hidden: the pad moves through menus instead. */
+.game.is-pad kbd:not([data-pad]) {
+  display: none;
+}
+
+.game.is-pad kbd[data-pad] {
+  font-size: 0;
+}
+
+.game.is-pad .ability-key {
+  font-size: 0;
+}
+
+.game.is-pad .ability-key::after {
+  content: 'B';
+  font-size: 12px;
+}
+
+.game.is-pad kbd[data-pad]::after {
+  content: attr(data-pad);
+  font-size: 18px;
 }
 
 /* Keyboard hints mean nothing on a touch screen: cards and buttons are tapped directly. */

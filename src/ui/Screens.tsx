@@ -3,6 +3,9 @@ import { ARENAS, CURSE_RULES, ENEMY_NAMES, arenaForWave, type Curse, type Mode, 
 import { LEDGER, type LedgerEntry, type LedgerState } from '../game/lore'
 import { ControlsList, RitesList, pad, sermonLine, withArticle } from './shared'
 
+/** The title screen's rows, top to bottom (some only appear when they apply). */
+export type TitleItem = 'players' | 'story' | 'endless' | 'ledger' | 'settings'
+
 export function TitleScreen({
   ready,
   best,
@@ -12,9 +15,12 @@ export function TitleScreen({
   deepestEndless,
   players,
   touch,
+  selected,
+  onSelect,
   onStart,
   onLedger,
   onPlayers,
+  onSettings,
 }: {
   ready: boolean
   best: number
@@ -25,9 +31,13 @@ export function TitleScreen({
   players: number
   /** Touch screens have no second set of keys, so co-op is keyboard and gamepad only. */
   touch: boolean
+  /** The highlighted row (↑ ↓ or the d-pad move it; Enter or A picks it). */
+  selected: TitleItem
+  onSelect: (item: TitleItem) => void
   onStart: (mode: Mode) => void
   onLedger: () => void
   onPlayers: (players: number) => void
+  onSettings: () => void
 }) {
   return (
     <div className="overlay">
@@ -44,7 +54,12 @@ export function TitleScreen({
         <div className="stack run-picker">
           {/* Players first: it applies to whichever mode starts. */}
           {!touch && (
-            <div className="players-toggle" role="radiogroup" aria-label="Players">
+            <div
+              className={`players-toggle ${selected === 'players' ? 'is-selected' : ''}`}
+              role="radiogroup"
+              aria-label="Players"
+              onPointerEnter={() => onSelect('players')}
+            >
               <span className="label">Players</span>
               {[1, 2].map((count) => (
                 <button
@@ -61,15 +76,27 @@ export function TitleScreen({
               <kbd>C</kbd>
             </div>
           )}
-          <button type="button" className="primary mode-button" onClick={() => onStart('story')} disabled={!ready} autoFocus>
+          <button
+            type="button"
+            className={`primary mode-button ${selected === 'story' ? 'is-selected' : ''}`}
+            onClick={() => onStart('story')}
+            onPointerEnter={() => onSelect('story')}
+            disabled={!ready}
+          >
             <span>
               {ready ? 'Story' : 'Lighting candles…'}
               {ready && <small>Refuse the Logos · twenty sermons</small>}
             </span>
-            <kbd>Enter</kbd>
+            <kbd data-pad="A">Enter</kbd>
           </button>
           {endlessOpen ? (
-            <button type="button" className="secondary mode-button" onClick={() => onStart('endless')} disabled={!ready}>
+            <button
+              type="button"
+              className={`secondary mode-button ${selected === 'endless' ? 'is-selected' : ''}`}
+              onClick={() => onStart('endless')}
+              onPointerEnter={() => onSelect('endless')}
+              disabled={!ready}
+            >
               <span>
                 Endless
                 <small>The 101st cycle · no end</small>
@@ -80,12 +107,25 @@ export function TitleScreen({
             <span className="locked-mode">Endless opens once a run reaches Sermon {endlessFrom}</span>
           )}
           {ledger.runs > 0 && (
-            <button type="button" className="ghost" onClick={onLedger}>
+            <button
+              type="button"
+              className={`ghost ${selected === 'ledger' ? 'is-selected' : ''}`}
+              onClick={onLedger}
+              onPointerEnter={() => onSelect('ledger')}
+            >
               The Ledger · {ledger.unlocked.length}/{LEDGER.length}
               {ledger.fresh.length > 0 && <span className="new-mark">New</span>}
               <kbd>L</kbd>
             </button>
           )}
+          <button
+            type="button"
+            className={`ghost ${selected === 'settings' ? 'is-selected' : ''}`}
+            onClick={onSettings}
+            onPointerEnter={() => onSelect('settings')}
+          >
+            Settings
+          </button>
         </div>
         {(best > 0 || ledger.deepest > 5) && (
           <span className="label subtle">
@@ -150,11 +190,11 @@ export function LedgerScreen({
           </article>
         </div>
         <button type="button" tabIndex={-1} className="ghost" onClick={onBack}>
-          Back <kbd>Esc</kbd>
+          Back <kbd data-pad="B">Esc</kbd>
         </button>
         <p className="choose-hint">
-          <kbd>↑</kbd>
-          <kbd>↓</kbd> turn the page · <kbd>Esc</kbd> back
+          <kbd data-pad="↑">↑</kbd>
+          <kbd data-pad="↓">↓</kbd> turn the page · <kbd data-pad="B">Esc</kbd> back
         </p>
       </div>
     </div>
@@ -205,6 +245,7 @@ export function MenuPanel({
   index,
   onSelect,
   hint,
+  dense = false,
 }: {
   kicker: string
   title: string
@@ -212,9 +253,11 @@ export function MenuPanel({
   index: number
   onSelect: (index: number) => void
   hint: string
+  /** Long menus (Settings, Keys) use shorter rows. */
+  dense?: boolean
 }) {
   return (
-    <div className="panel small-panel">
+    <div className={`panel small-panel ${dense ? 'is-dense' : ''}`}>
       <span className="label accent">{kicker}</span>
       <h2>{title}</h2>
       <div className="stack">
@@ -236,28 +279,51 @@ export function MenuPanel({
             }}
           >
             {item.label}
-            {item.key && <kbd>{item.key}</kbd>}
+            {item.key && <kbd data-pad={item.key === 'Esc' ? 'B' : undefined}>{item.key}</kbd>}
           </button>
         ))}
       </div>
       <p className="choose-hint">
-        <kbd>↑</kbd>
-        <kbd>↓</kbd> {hint}
+        <kbd data-pad="↑">↑</kbd>
+        <kbd data-pad="↓">↓</kbd> {hint}
       </p>
     </div>
   )
 }
 
-export function ControlsPage({ players, onBack }: { players: number; onBack: () => void }) {
+/** Who made the game (see src/credits.ts), and the assets it uses. */
+export function CreditsPage({ credits, onBack }: { credits: { heading: string; lines: string[] }[]; onBack: () => void }) {
+  return (
+    <div className="panel controls-panel credits">
+      <span className="label accent">AI Cathedral</span>
+      <h2>Credits</h2>
+      {credits
+        .filter((section) => section.lines.length)
+        .map((section) => (
+          <div key={section.heading} className="credit">
+            <span className="label">{section.heading}</span>
+            {section.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        ))}
+      <button type="button" tabIndex={-1} className="secondary is-selected" onClick={onBack}>
+        Back <kbd data-pad="B">Esc</kbd>
+      </button>
+    </div>
+  )
+}
+
+export function ControlsPage({ players, pad, onBack }: { players: number; pad: boolean; onBack: () => void }) {
   return (
     <div className="panel controls-panel">
       <span className="label accent">Paused</span>
       <h2>Controls</h2>
-      <ControlsList players={players} />
+      <ControlsList players={players} pad={pad} />
       <span className="label">Rites</span>
       <RitesList />
       <button type="button" tabIndex={-1} className="secondary is-selected" onClick={onBack}>
-        Back <kbd>Esc</kbd>
+        Back <kbd data-pad="B">Esc</kbd>
       </button>
     </div>
   )
@@ -309,8 +375,8 @@ export function UpgradeScreen({
           })}
         </div>
         <p className="choose-hint">
-          <kbd>←</kbd>
-          <kbd>→</kbd> choose · <kbd>Space</kbd> confirm
+          <kbd data-pad="←">←</kbd>
+          <kbd data-pad="→">→</kbd> choose · <kbd data-pad="A">Space</kbd> confirm
         </p>
       </div>
     </div>
@@ -383,10 +449,10 @@ export function ResultsScreen({
         )}
         <div className="stack">
           <button type="button" className="primary" onClick={onRestart} autoFocus>
-            {won ? 'Defy it again' : 'Reject conversion'} <kbd>Enter</kbd>
+            {won ? 'Defy it again' : 'Reject conversion'} <kbd data-pad="A">Enter</kbd>
           </button>
           <button type="button" className="ghost" onClick={onTitle}>
-            Title screen
+            Title screen <kbd data-pad="B">Esc</kbd>
           </button>
         </div>
       </div>

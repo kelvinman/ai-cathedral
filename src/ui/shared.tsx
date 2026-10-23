@@ -72,7 +72,26 @@ export function RiteTip({ rite }: { rite: AbilityKey }) {
 }
 
 /** The four inputs (both players' in co-op), plus a reminder that firing and rites are automatic. */
-export function ControlsList({ players = 1 }: { players?: number }) {
+export function ControlsList({ players = 1, pad = false }: { players?: number; pad?: boolean }) {
+  if (pad) {
+    return (
+      <>
+        <dl className="controls is-coop">
+          <div>
+            <dt>Gamepad</dt>
+            <dd>Stick or d-pad move · A jump ×2 · down drop · B dash · Start pause</dd>
+          </div>
+          {players > 1 && (
+            <div>
+              <dt>Two players</dt>
+              <dd>One pad joins as player 2 beside the keyboard; with two pads, one each.</dd>
+            </div>
+          )}
+        </dl>
+        <p className="controls-note">You fire automatically. Your rites cast themselves.</p>
+      </>
+    )
+  }
   if (players > 1) {
     return (
       <>
