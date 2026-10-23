@@ -74,7 +74,7 @@ Every push to `main` is tested and deployed to GitHub Pages
 
 ## Credits
 
-Original concept with Jon, Daniel and Victoria, made at the Friends of Figma Los Angeles AI Impact
+Original concept with Jon, Danny and Vic, made at the Friends of Figma Los Angeles AI Impact
 Workshop, where it was first prototyped in Figma Make. See `src/credits.ts`, also shown in game under Settings → Save and credits → Credits.
 Fonts: Pixelify Sans, Silkscreen and VT323 (SIL Open Font License). Palette: Endesga 32
 by ENDESGA. Built with Claude (Anthropic).
